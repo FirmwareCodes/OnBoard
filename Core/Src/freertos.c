@@ -164,28 +164,32 @@ void RTOS_Start(void)
   /* Create the thread(s) */
   /* creation of OneSecondTask */
   OneSecondTaskHandle = osThreadNew(StartOneSecondTask, NULL, &OneSecondTask_attributes);
-  if (OneSecondTaskHandle == NULL) {
+  if (OneSecondTaskHandle == NULL)
+  {
     Error_Handler();
   }
   osDelay(10); // 태스크 생성 안정화
 
   /* creation of AdcTask */
   AdcTaskHandle = osThreadNew(StartAdcTask, NULL, &AdcTask_attributes);
-  if (AdcTaskHandle == NULL) {
+  if (AdcTaskHandle == NULL)
+  {
     Error_Handler();
   }
   osDelay(10); // 태스크 생성 안정화
 
   /* creation of ButtonTask */
   ButtonTaskHandle = osThreadNew(StartButtonTask, NULL, &ButtonTask_attributes);
-  if (ButtonTaskHandle == NULL) {
+  if (ButtonTaskHandle == NULL)
+  {
     Error_Handler();
   }
   osDelay(10); // 태스크 생성 안정화
 
   /* creation of DisplayTask */
   DisplayTaskHandle = osThreadNew(StartDisplayTask, NULL, &DisplayTask_attributes);
-  if (DisplayTaskHandle == NULL) {
+  if (DisplayTaskHandle == NULL)
+  {
     Error_Handler();
   }
   osDelay(10); // 태스크 생성 안정화
@@ -327,7 +331,7 @@ void StartAdcTask(void *argument)
     {
       LED1_State = LED_STATE_LOW;
     }
-    else if (LED1_ADC_Value >= 2200)
+    else if (LED1_ADC_Value >= 3000)
     {
       LED1_State = LED_STATE_HIGH;
     }
@@ -341,7 +345,7 @@ void StartAdcTask(void *argument)
     {
       LED2_State = LED_STATE_LOW;
     }
-    else if (LED2_ADC_Value >= 2200)
+    else if (LED2_ADC_Value >= 3000)
     {
       LED2_State = LED_STATE_HIGH;
     }
@@ -361,7 +365,7 @@ void StartAdcTask(void *argument)
     current_time = xTaskGetTickCount();
 
     // 0.1초(100ms) 이상 상태 유지 확인
-    if ((current_time - State_Start_Time) >= (100 / portTICK_PERIOD_MS))
+    if (State_Start_Time != 0 && (current_time - State_Start_Time) >= (100 / portTICK_PERIOD_MS))
     {
 
       // PWM 듀티 결정 로직
@@ -398,10 +402,20 @@ void StartAdcTask(void *argument)
       {
         Current_PWM_Duty = target_duty;
         __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
+        State_Start_Time = 0;
       }
     }
+    else if (Current_PWM_Duty != 0 && LED1_State == LED_STATE_FLOATING && LED2_State == LED_STATE_FLOATING)
+    {
+      // 둘다 Floating -> 듀티 0%
+      target_duty = 0;
 
-    vTaskDelayUntil(&lastWakeTime, 30 * portTICK_PERIOD_MS);
+      Current_PWM_Duty = target_duty;
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
+      State_Start_Time = 0;
+    }
+
+    vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartAdcTask */
 }
@@ -551,7 +565,7 @@ void StartButtonTask(void *argument)
       {
         Current_Button_State = BUTTON_STATE_TIMER_SET;
         Timer_Set_Inactive_Start_Time = current_time; // TIMER_SET 진입시 비활성화 타이머 시작
-        Button_Pressed = 0; // 1.5초 이벤트 처리 후 중복 방지
+        Button_Pressed = 0;                           // 1.5초 이벤트 처리 후 중복 방지
       }
       else if (Current_Button_State == BUTTON_STATE_TIMER_SET)
       {
@@ -594,7 +608,8 @@ void Callback01(void *argument)
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
   /* 스택 오버플로우 발생시 System LED를 빠르게 깜빡이며 에러 표시 */
-  while(1) {
+  while (1)
+  {
     HAL_GPIO_TogglePin(System_LED_GPIO_Port, System_LED_Pin);
     HAL_Delay(100);
   }
