@@ -70,12 +70,12 @@ void Callback01(void *argument);
 #define LCD_CLK_GPIO_Port GPIOA
 #define LED_PWM_Pin GPIO_PIN_3
 #define LED_PWM_GPIO_Port GPIOA
-#define LED1_ADC_Pin GPIO_PIN_5
-#define LED1_ADC_GPIO_Port GPIOA
+#define LED1_IN_Pin GPIO_PIN_5
+#define LED1_IN_GPIO_Port GPIOA
 #define LCD_DIN_Pin GPIO_PIN_7
 #define LCD_DIN_GPIO_Port GPIOA
-#define LED2_ADC_Pin GPIO_PIN_0
-#define LED2_ADC_GPIO_Port GPIOB
+#define LED2_IN_Pin GPIO_PIN_0
+#define LED2_IN_GPIO_Port GPIOB
 #define VBat_ADC_Pin GPIO_PIN_1
 #define VBat_ADC_GPIO_Port GPIOB
 #define FAN_ONOFF_Pin GPIO_PIN_12

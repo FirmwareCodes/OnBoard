@@ -82,7 +82,12 @@ const osEventFlagsAttr_t MainStatusEvent_attributes = {
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
+extern ADC_HandleTypeDef hadc1;
+extern UART_HandleTypeDef huart1;
 
+uint16_t LED1_ADC_Value = 0;
+uint16_t LED2_ADC_Value = 0;
+uint16_t VBat_ADC_Value = 0;
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -155,12 +160,17 @@ void RTOS_Start(void)
 /* USER CODE END Header_StartOneSecondTask */
 void StartOneSecondTask(void *argument)
 {
-  UNUSED(argument);
+
   /* USER CODE BEGIN 5 */
+  UNUSED(argument);
+  TickType_t lastWakeTime;
+  lastWakeTime = xTaskGetTickCount();
+
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    HAL_GPIO_TogglePin(System_LED_GPIO_Port, System_LED_Pin);
+    vTaskDelayUntil(&lastWakeTime, 1000 * portTICK_PERIOD_MS);
   }
   /* USER CODE END 5 */
 }
@@ -176,10 +186,49 @@ void StartAdcTask(void *argument)
 {
   UNUSED(argument);
   /* USER CODE BEGIN StartAdcTask */
+  TickType_t lastWakeTime;
+  lastWakeTime = xTaskGetTickCount();
+  
+  ADC_ChannelConfTypeDef sConfig = {0};
+  
+  // 이동평균 필터를 위한 변수들
+  #define FILTER_SIZE 8
+  uint16_t vbat_buffer[FILTER_SIZE] = {0};
+  uint8_t filter_index = 0;
+  
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    uint32_t sum;
+    uint16_t temp_adc_value;
+
+    // ADC Channel 16 설정 및 읽기
+    sConfig.Channel = ADC_CHANNEL_16;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;  // 긴 샘플링 시간
+    sConfig.SingleDiff = ADC_SINGLE_ENDED;
+    sConfig.OffsetNumber = ADC_OFFSET_NONE;
+    sConfig.Offset = 0;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    
+    HAL_Delay(2);  // 채널 전환 안정화 시간
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 1000);
+    temp_adc_value = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    
+    // 이동평균 필터 적용
+    vbat_buffer[filter_index] = temp_adc_value;
+    sum = 0;
+    for(int i = 0; i < FILTER_SIZE; i++) {
+      sum += vbat_buffer[i];
+    }
+    VBat_ADC_Value = sum / FILTER_SIZE;
+    
+    // 필터 인덱스 업데이트
+    filter_index = (filter_index + 1) % FILTER_SIZE;
+
+    vTaskDelayUntil(&lastWakeTime, 100 * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartAdcTask */
 }
@@ -195,6 +244,9 @@ void StartDisplayTask(void *argument)
 {
   UNUSED(argument);
   /* USER CODE BEGIN StartDisplayTask */
+  TickType_t lastWakeTime;
+  lastWakeTime = xTaskGetTickCount();
+
   /* Infinite loop */
   for (;;)
   {
@@ -211,7 +263,7 @@ void StartDisplayTask(void *argument)
 
     OLED_1in3_C_Display(BlackImage);
 
-    osDelay(100);
+    vTaskDelayUntil(&lastWakeTime, 100 * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartDisplayTask */
 }
@@ -227,10 +279,13 @@ void StartButtonTask(void *argument)
 {
   /* USER CODE BEGIN StartButtonTask */
   UNUSED(argument);
+    TickType_t lastWakeTime;
+  lastWakeTime = xTaskGetTickCount();
+
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    vTaskDelayUntil(&lastWakeTime, 10 * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartButtonTask */
 }
@@ -244,3 +299,4 @@ void Callback01(void *argument)
 }
 
 /* USER CODE END Application */
+
