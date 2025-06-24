@@ -45,14 +45,32 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
+
+file(GLOB SRC_FILES CONFIGURE_DEPENDS
+App/Common/Src/*.c
+App/Common/Src/OLED/*.c
+App/Common/Font/*.c
+App/Hw/Src/*.c
+App/Hw/*.c
+
+)
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ${SRC_FILES}
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    App/Hw
+    App/Hw/Inc
+    App/Common
+    App/Common/Inc
+    App/Common/Inc/OLED
+    App/Common/Font
+
 )
 
 # Add project symbols (macros)

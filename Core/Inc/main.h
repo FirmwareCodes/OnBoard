@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "cmsis_os.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -55,7 +55,12 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+void RTOS_Start(void);
+void StartOneSecondTask(void *argument);
+void StartAdcTask(void *argument);
+void StartDisplayTask(void *argument);
+void StartButtonTask(void *argument);
+void Callback01(void *argument);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

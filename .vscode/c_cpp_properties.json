@@ -10,7 +10,8 @@
              */
             "name": "STM32",
             "configurationProvider": "ms-vscode.cmake-tools",
-            "intelliSenseMode": "${default}"
+            "intelliSenseMode": "${default}",
+            "compileCommands": "build/Debug/compile_commands.json"
         }
     ]
 }
