@@ -91,6 +91,8 @@ const osEventFlagsAttr_t MainStatusEvent_attributes = {
 /* USER CODE END FunctionPrototypes */
 
 /* Private application code --------------------------------------------------*/
+/* USER CODE BEGIN Application */
+
 void RTOS_Start(void)
 {
   osKernelInitialize();
@@ -144,8 +146,6 @@ void RTOS_Start(void)
   osKernelStart();
 }
 
-/* USER CODE BEGIN Application */
-
 /* USER CODE BEGIN Header_StartOneSecondTask */
 /**
  * @brief  Function implementing the OneSecondTask thread.
@@ -155,6 +155,7 @@ void RTOS_Start(void)
 /* USER CODE END Header_StartOneSecondTask */
 void StartOneSecondTask(void *argument)
 {
+  UNUSED(argument);
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for (;;)
@@ -173,6 +174,7 @@ void StartOneSecondTask(void *argument)
 /* USER CODE END Header_StartAdcTask */
 void StartAdcTask(void *argument)
 {
+  UNUSED(argument);
   /* USER CODE BEGIN StartAdcTask */
   /* Infinite loop */
   for (;;)
@@ -191,11 +193,25 @@ void StartAdcTask(void *argument)
 /* USER CODE END Header_StartDisplayTask */
 void StartDisplayTask(void *argument)
 {
+  UNUSED(argument);
   /* USER CODE BEGIN StartDisplayTask */
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    Paint_Clear(BLACK);
+
+    Paint_DrawRectangle(1, 1, 128, 64, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    // Paint_DrawLine(80, 20, 80, 64, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID); // y-axis line
+    // Paint_DrawLine(0, 20, 128, 20, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID); // x-axis line
+
+    // Paint_DrawNum(27, 5, Dimming, &Font12, 0, 0xFF, 0x00);
+
+    // Paint_DrawString_EN(5, 24, "Temp:   'C", &Font12, 0x00, 0xFF);
+    // Paint_DrawNum(42, 24, Direction, &Font12, 0, 0xFF, 0x00);
+
+    OLED_1in3_C_Display(BlackImage);
+
+    osDelay(100);
   }
   /* USER CODE END StartDisplayTask */
 }
@@ -210,6 +226,7 @@ void StartDisplayTask(void *argument)
 void StartButtonTask(void *argument)
 {
   /* USER CODE BEGIN StartButtonTask */
+  UNUSED(argument);
   /* Infinite loop */
   for (;;)
   {
@@ -222,9 +239,8 @@ void StartButtonTask(void *argument)
 void Callback01(void *argument)
 {
   /* USER CODE BEGIN Callback01 */
-
+  UNUSED(argument);
   /* USER CODE END Callback01 */
 }
 
 /* USER CODE END Application */
-

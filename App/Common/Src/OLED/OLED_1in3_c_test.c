@@ -60,6 +60,8 @@ int OLED_1in3_c_test(void)
 	Paint_SelectImage(BlackImage);
 	Driver_Delay_ms(500);
 	Paint_Clear(BLACK);
+	
+	return 0;
 //	while(1)
 //	{
 //		Paint_DrawString_EN(70, 10, "LAMP", &Font12, 0x00, 0xFF);

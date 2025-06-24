@@ -11,6 +11,12 @@
 #include <string.h>
 #include <time.h>
 
+#include "Debug.h"
+#include "DEV_Config.h"
+#include "GUI_Paint.h"
+#include "ImageData.h"
+#include "OLED_1in3_c.h"
+#include "test.h"
 
 #endif
 

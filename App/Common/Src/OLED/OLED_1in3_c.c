@@ -30,6 +30,7 @@
 
 #include "OLED_1in3_c.h"
 #include "stdio.h"
+#include "DEV_Config.h"
 
 /*******************************************************************************
 function:
