@@ -1,0 +1,7 @@
+C:/Users/ym720/Git-projects/OnBoard_FW/CMakeFiles/OnBoardCtrl_FW.dir
+C:/Users/ym720/Git-projects/OnBoard_FW/CMakeFiles/edit_cache.dir
+C:/Users/ym720/Git-projects/OnBoard_FW/CMakeFiles/rebuild_cache.dir
+C:/Users/ym720/Git-projects/OnBoard_FW/cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir
+C:/Users/ym720/Git-projects/OnBoard_FW/cmake/stm32cubemx/CMakeFiles/FreeRTOS.dir
+C:/Users/ym720/Git-projects/OnBoard_FW/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+C:/Users/ym720/Git-projects/OnBoard_FW/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir
