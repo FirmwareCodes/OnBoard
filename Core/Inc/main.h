@@ -1,21 +1,21 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.h
-  * @brief          : Header for main.c file.
-  *                   This file contains the common defines of the application.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.h
+ * @brief          : Header for main.c file.
+ *                   This file contains the common defines of the application.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
@@ -23,7 +23,8 @@
 #define __MAIN_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /* Includes ------------------------------------------------------------------*/
@@ -34,35 +35,79 @@ extern "C" {
 #include "def.h"
 #include "cmsis_os.h"
 
-/* USER CODE END Includes */
+  /* USER CODE END Includes */
 
-/* Exported types ------------------------------------------------------------*/
-/* USER CODE BEGIN ET */
+  /* Exported types ------------------------------------------------------------*/
+  /* USER CODE BEGIN ET */
+  // LED PWM 제어를 위한 변수들
+  typedef enum
+  {
+    LED_STATE_LOW = 0,
+    LED_STATE_FLOATING,
+    LED_STATE_HIGH
+  } LED_State_t;
 
-/* USER CODE END ET */
+  typedef enum
+  {
+    BUTTON_STATE_STANDBY = 0,
+    BUTTON_STATE_ON,
+    BUTTON_STATE_TIMER_SET,
+    BUTTON_STATE_TIMER_UP,
+  } Button_State_t;
 
-/* Exported constants --------------------------------------------------------*/
-/* USER CODE BEGIN EC */
+  typedef struct
+  {
+    uint16_t LED1_ADC_Value; // LED1 ADC 값
+    uint16_t LED2_ADC_Value; // LED2 ADC 값
+    uint16_t VBat_ADC_Value; // VBat ADC 값
 
-/* USER CODE END EC */
+    LED_State_t LED1_State;    // LED1 상태
+    LED_State_t LED2_State;    // LED2 상태
+    uint32_t State_Start_Time; // 상태 시작 시간
+    uint16_t Current_PWM_Duty; // 현재 PWM 듀티
+  } Adc_t;
 
-/* Exported macro ------------------------------------------------------------*/
-/* USER CODE BEGIN EM */
+  // 버튼 제어를 위한 변수들
+  typedef struct
+  {
+    uint8_t Timer_Value;                    // 타이머 초기값 5
+    uint32_t Timer_Set_Inactive_Start_Time; // TIMER_SET 상태 비활성화 시간 추적
 
-/* USER CODE END EM */
+    Button_State_t Current_Button_State; // 현재 버튼 상태
+    uint32_t Button_Press_Start_Time;    // 버튼 누름 시작 시간
 
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+    GPIO_PinState Button_Current_State;  // 현재 버튼 상태
+    GPIO_PinState Button_Prev_State;     // 이전 버튼 상태
+    uint32_t Button_Press_Duration;      // 버튼 누름 지속 시간
+    uint32_t Button_Current_Time;        // 현재 시간
 
-/* Exported functions prototypes ---------------------------------------------*/
-void Error_Handler(void);
+    // 버튼 안정화를 위한 디바운싱 변수
+    bool is_pushed_changed;            // 버튼 누름 상태로 인한 변경여부
+  } Button_t;
+  /* USER CODE END ET */
 
-/* USER CODE BEGIN EFP */
-void RTOS_Start(void);
-void StartOneSecondTask(void *argument);
-void StartAdcTask(void *argument);
-void StartDisplayTask(void *argument);
-void StartButtonTask(void *argument);
-void Callback01(void *argument);
+  /* Exported constants --------------------------------------------------------*/
+  /* USER CODE BEGIN EC */
+
+  /* USER CODE END EC */
+
+  /* Exported macro ------------------------------------------------------------*/
+  /* USER CODE BEGIN EM */
+
+  /* USER CODE END EM */
+
+  void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
+  /* Exported functions prototypes ---------------------------------------------*/
+  void Error_Handler(void);
+
+  /* USER CODE BEGIN EFP */
+  void RTOS_Start(void);
+  void StartOneSecondTask(void *argument);
+  void StartAdcTask(void *argument);
+  void StartDisplayTask(void *argument);
+  void StartButtonTask(void *argument);
+  void Callback01(void *argument);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -99,9 +144,9 @@ void Callback01(void *argument);
 #define DUTY_50 400
 #define DUTY_0 0
 
-/* USER CODE BEGIN Private defines */
+  /* USER CODE BEGIN Private defines */
 
-/* USER CODE END Private defines */
+  /* USER CODE END Private defines */
 
 #ifdef __cplusplus
 }

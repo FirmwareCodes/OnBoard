@@ -31,21 +31,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-// LED PWM 제어를 위한 변수들
-typedef enum
-{
-  LED_STATE_LOW = 0,
-  LED_STATE_FLOATING,
-  LED_STATE_HIGH
-} LED_State_t;
 
-typedef enum
-{
-  BUTTON_STATE_STANDBY = 0,
-  BUTTON_STATE_ON,
-  BUTTON_STATE_TIMER_SET,
-  BUTTON_STATE_TIMER_UP,
-} Button_State_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -102,31 +88,28 @@ extern ADC_HandleTypeDef hadc2;
 extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim2;
 
-uint16_t LED1_ADC_Value = 0;
-uint16_t LED2_ADC_Value = 0;
-uint16_t VBat_ADC_Value = 0;
+Adc_t Adc_State = {
+    .LED1_ADC_Value = 0,              // LED1 ADC 값
+    .LED2_ADC_Value = 0,              // LED2 ADC 값
+    .VBat_ADC_Value = 0,              // VBat ADC 값
+    .LED1_State = LED_STATE_FLOATING, // LED1 상태
+    .LED2_State = LED_STATE_FLOATING, // LED2 상태
+    .State_Start_Time = 0,            // 상태 시작 시간
+    .Current_PWM_Duty = 0,            // 현재 PWM 듀티
+};
 
-LED_State_t LED1_State = LED_STATE_FLOATING;
-LED_State_t LED2_State = LED_STATE_FLOATING;
-uint32_t State_Start_Time = 0;
-uint16_t Current_PWM_Duty = 0;
+Button_t Button_State = {
+    .Timer_Value = 5,                             // 타이머 초기값
+    .Timer_Set_Inactive_Start_Time = 0,           // TIMER_SET 상태 비활성화 시간
+    .Current_Button_State = BUTTON_STATE_STANDBY, // 현재 버튼 상태
+    .Button_Press_Start_Time = 0,                 // 버튼 누름 시작 시간
+    .Button_Press_Duration = 0,                   // 버튼 누름 지속 시간
+    .Button_Current_Time = 0,                     // 현재 시간
+    .Button_Current_State = GPIO_PIN_SET,         // 현재 버튼 상태
+    .Button_Prev_State = GPIO_PIN_SET,            // 이전 버튼 상태
+    .is_pushed_changed = false,                   // 버튼 누름 상태로 인한 변경여부
+};
 
-// 버튼 제어를 위한 변수들
-Button_State_t Current_Button_State = BUTTON_STATE_STANDBY;
-uint8_t Timer_Value = 5; // 타이머 초기값 5
-uint32_t Button_Press_Start_Time = 0;
-uint8_t Button_Pressed = 0;
-uint8_t Button_Released = 0;
-uint32_t Timer_Set_Inactive_Start_Time = 0; // TIMER_SET 상태 비활성화 시간 추적
-
-GPIO_PinState button_current_state = GPIO_PIN_SET;
-GPIO_PinState button_prev_state = GPIO_PIN_SET;
-uint32_t button_press_duration = 0;
-uint32_t current_time = 0;
-
-// 버튼 안정화를 위한 디바운싱 변수
-uint8_t button_stable_count = 0;
-GPIO_PinState button_stable_state = GPIO_PIN_SET;
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -281,7 +264,7 @@ void StartAdcTask(void *argument)
 
     HAL_ADC_Start(&hadc2);
     HAL_ADC_PollForConversion(&hadc2, 1000);
-    LED1_ADC_Value = HAL_ADC_GetValue(&hadc2);
+    Adc_State.LED1_ADC_Value = HAL_ADC_GetValue(&hadc2);
     HAL_ADC_Stop(&hadc2);
 
     // LED2 ADC - ADC2 Channel 15 읽기
@@ -295,7 +278,7 @@ void StartAdcTask(void *argument)
 
     HAL_ADC_Start(&hadc2);
     HAL_ADC_PollForConversion(&hadc2, 1000);
-    LED2_ADC_Value = HAL_ADC_GetValue(&hadc2);
+    Adc_State.LED2_ADC_Value = HAL_ADC_GetValue(&hadc2);
     HAL_ADC_Stop(&hadc2);
 
     // VBat ADC - ADC1 Channel 16 읽기
@@ -309,7 +292,7 @@ void StartAdcTask(void *argument)
 
     HAL_ADC_Start(&hadc1);
     HAL_ADC_PollForConversion(&hadc1, 1000);
-    VBat_ADC_Value = HAL_ADC_GetValue(&hadc1);
+    Adc_State.VBat_ADC_Value = HAL_ADC_GetValue(&hadc1);
     HAL_ADC_Stop(&hadc1);
 
     // // VBat에만 이동평균 필터 적용
@@ -325,112 +308,112 @@ void StartAdcTask(void *argument)
     // filter_index = (filter_index + 1) % FILTER_SIZE;
 
     // LED1 상태 판단
-    if (LED1_ADC_Value == 0)
+    if (Adc_State.LED1_ADC_Value == 0)
     {
-      LED1_State = LED_STATE_LOW;
+      Adc_State.LED1_State = LED_STATE_LOW;
     }
-    else if (LED1_ADC_Value >= 3000)
+    else if (Adc_State.LED1_ADC_Value >= 3000)
     {
-      LED1_State = LED_STATE_HIGH;
+      Adc_State.LED1_State = LED_STATE_HIGH;
     }
     else
     {
-      LED1_State = LED_STATE_FLOATING;
+      Adc_State.LED1_State = LED_STATE_FLOATING;
     }
 
     // LED2 상태 판단
-    if (LED2_ADC_Value == 0)
+    if (Adc_State.LED2_ADC_Value == 0)
     {
-      LED2_State = LED_STATE_LOW;
+      Adc_State.LED2_State = LED_STATE_LOW;
     }
-    else if (LED2_ADC_Value >= 3000)
+    else if (Adc_State.LED2_ADC_Value >= 3000)
     {
-      LED2_State = LED_STATE_HIGH;
+      Adc_State.LED2_State = LED_STATE_HIGH;
     }
     else
     {
-      LED2_State = LED_STATE_FLOATING;
+      Adc_State.LED2_State = LED_STATE_FLOATING;
     }
 
     // 상태 변화 감지
-    if (LED1_State != prev_LED1_State || LED2_State != prev_LED2_State)
+    if (Adc_State.LED1_State != prev_LED1_State || Adc_State.LED2_State != prev_LED2_State)
     {
-      State_Start_Time = xTaskGetTickCount();
-      prev_LED1_State = LED1_State;
-      prev_LED2_State = LED2_State;
+      Adc_State.State_Start_Time = xTaskGetTickCount();
+      prev_LED1_State = Adc_State.LED1_State;
+      prev_LED2_State = Adc_State.LED2_State;
     }
 
     current_time = xTaskGetTickCount();
 
     // 0.1초(100ms) 이상 상태 유지 확인
-    if (State_Start_Time != 0 && (current_time - State_Start_Time) >= (100 / portTICK_PERIOD_MS))
+    if (Adc_State.State_Start_Time != 0 && (current_time - Adc_State.State_Start_Time) >= (100 / portTICK_PERIOD_MS))
     {
 
       // PWM 듀티 결정 로직
-      if (LED1_State == LED_STATE_LOW && LED2_State == LED_STATE_LOW)
+      if (Adc_State.LED1_State == LED_STATE_LOW && Adc_State.LED2_State == LED_STATE_LOW)
       {
         // 둘다 Low -> 듀티 100%
         target_duty = DUTY_100;
       }
-      else if (LED1_State == LED_STATE_HIGH || LED2_State == LED_STATE_HIGH)
+      else if (Adc_State.LED1_State == LED_STATE_HIGH || Adc_State.LED2_State == LED_STATE_HIGH)
       {
         // 둘다 High -> 듀티 100%
         target_duty = DUTY_100;
       }
-      else if (LED1_State == LED_STATE_FLOATING && LED2_State == LED_STATE_FLOATING)
+      else if (Adc_State.LED1_State == LED_STATE_FLOATING && Adc_State.LED2_State == LED_STATE_FLOATING)
       {
         // 둘다 Floating -> 듀티 0%
         target_duty = DUTY_0;
       }
-      else if ((LED1_State == LED_STATE_LOW && LED2_State == LED_STATE_FLOATING) ||
-               (LED2_State == LED_STATE_LOW && LED1_State == LED_STATE_FLOATING))
+      else if ((Adc_State.LED1_State == LED_STATE_LOW && Adc_State.LED2_State == LED_STATE_FLOATING) ||
+               (Adc_State.LED2_State == LED_STATE_LOW && Adc_State.LED1_State == LED_STATE_FLOATING))
       {
         // 1개만 Low -> 듀티 50%
         target_duty = DUTY_50;
       }
-      else if ((LED1_State == LED_STATE_HIGH && LED2_State != LED_STATE_HIGH) ||
-               (LED2_State == LED_STATE_HIGH && LED1_State != LED_STATE_HIGH))
+      else if ((Adc_State.LED1_State == LED_STATE_HIGH && Adc_State.LED2_State != LED_STATE_HIGH) ||
+               (Adc_State.LED2_State == LED_STATE_HIGH && Adc_State.LED1_State != LED_STATE_HIGH))
       {
         // 1개만 High -> 듀티 100%
         target_duty = DUTY_100;
       }
 
-      if (Current_PWM_Duty != target_duty)
+      if (Adc_State.Current_PWM_Duty != target_duty)
       {
-        Current_PWM_Duty = target_duty;
-        State_Start_Time = 0;
+        Adc_State.Current_PWM_Duty = target_duty;
+        Adc_State.State_Start_Time = 0;
 
-        if (Current_Button_State == BUTTON_STATE_ON)
+        if (Button_State.Current_Button_State == BUTTON_STATE_ON)
         {
-          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
+          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Adc_State.Current_PWM_Duty);
         }
-        else if (Current_Button_State == BUTTON_STATE_STANDBY)
+        else if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
         {
           __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, DUTY_0);
         }
       }
     }
-    else if (Current_PWM_Duty != 0 && LED1_State == LED_STATE_FLOATING && LED2_State == LED_STATE_FLOATING)
+    else if (Adc_State.Current_PWM_Duty != 0 && Adc_State.LED1_State == LED_STATE_FLOATING && Adc_State.LED2_State == LED_STATE_FLOATING)
     {
       // 둘다 Floating -> 듀티 0%
       target_duty = DUTY_0;
 
-      if (Current_PWM_Duty != target_duty)
+      if (Adc_State.Current_PWM_Duty != target_duty)
       {
-        Current_PWM_Duty = target_duty;
-        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
-        State_Start_Time = 0;
+        Adc_State.Current_PWM_Duty = target_duty;
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Adc_State.Current_PWM_Duty);
+        Adc_State.State_Start_Time = 0;
       }
     }
 
-    if (last_button_state != Current_Button_State)
+    if (last_button_state != Button_State.Current_Button_State)
     {
-      last_button_state = Current_Button_State;
-      if (Current_Button_State == BUTTON_STATE_ON)
+      last_button_state = Button_State.Current_Button_State;
+      if (Button_State.Current_Button_State == BUTTON_STATE_ON)
       {
-        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Adc_State.Current_PWM_Duty);
       }
-      else if (Current_Button_State == BUTTON_STATE_STANDBY)
+      else if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
       {
         __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, DUTY_0);
       }
@@ -490,12 +473,17 @@ void StartButtonTask(void *argument)
   TickType_t lastWakeTime;
   lastWakeTime = xTaskGetTickCount();
 
+  bool is_Button_Pressed = false;    // 버튼 누름 상태
+  bool is_Button_Released = false;   // 버튼 릴리즈 상태
+  GPIO_PinState button_stable_state = GPIO_PIN_SET; // 버튼 바운드 상태
+  uint8_t button_stable_count = 0;       // 버튼 바운드 카운트
+
   /* Infinite loop */
   for (;;)
   {
     // Setting_Button 핀 상태 읽기 (PULLUP 설정이므로 평상시 HIGH, 눌리면 LOW)
     GPIO_PinState button_raw_state = HAL_GPIO_ReadPin(Setting_Button_GPIO_Port, Setting_Button_Pin);
-    current_time = xTaskGetTickCount();
+    Button_State.Button_Current_Time = xTaskGetTickCount();
 
     // 디바운싱 처리 - 3번 연속 같은 상태일 때만 인정
     if (button_raw_state == button_stable_state)
@@ -503,7 +491,7 @@ void StartButtonTask(void *argument)
       button_stable_count++;
       if (button_stable_count >= 3)
       {
-        button_current_state = button_stable_state;
+        Button_State.Button_Current_State = button_stable_state;
         button_stable_count = 3; // 오버플로우 방지
       }
     }
@@ -514,62 +502,68 @@ void StartButtonTask(void *argument)
     }
 
     // 버튼 눌림 감지 (HIGH에서 LOW로 전환) - 안정화된 상태에서만 처리
-    if (button_prev_state == GPIO_PIN_SET && button_current_state == GPIO_PIN_RESET && button_stable_count >= 3)
+    if (Button_State.Button_Prev_State == GPIO_PIN_SET &&
+        Button_State.Button_Current_State == GPIO_PIN_RESET &&
+        button_stable_count >= 3)
     {
-      Button_Press_Start_Time = current_time;
-      Button_Pressed = 1;
-      Button_Released = 0;
+      Button_State.Button_Press_Start_Time = Button_State.Button_Current_Time;
+      is_Button_Pressed = true;
+      is_Button_Released = false;
     }
 
     // 버튼 릴리즈 감지 (LOW에서 HIGH로 전환) - 안정화된 상태에서만 처리
-    if (button_prev_state == GPIO_PIN_RESET && button_current_state == GPIO_PIN_SET && button_stable_count >= 3)
+    if (Button_State.Button_Prev_State == GPIO_PIN_RESET &&
+        Button_State.Button_Current_State == GPIO_PIN_SET &&
+        button_stable_count >= 3)
     {
-      button_press_duration = current_time - Button_Press_Start_Time;
-      Button_Pressed = 0;
-      Button_Released = 1;
+      Button_State.Button_Press_Duration = Button_State.Button_Current_Time - Button_State.Button_Press_Start_Time;
+
+      Button_State.is_pushed_changed = false;
+      is_Button_Pressed = false;
+      is_Button_Released = true;
 
       // 유효한 버튼 클릭인지 확인 (최소 20ms 이상)
-      if (button_press_duration >= (20 / portTICK_PERIOD_MS))
+      if (Button_State.Button_Press_Duration >= (20 / portTICK_PERIOD_MS))
       {
 
         // 버튼 상태에 따른 동작 처리
-        switch (Current_Button_State)
+        switch (Button_State.Current_Button_State)
         {
         case BUTTON_STATE_STANDBY:
           // STANDBY에서 1초 이하 클릭 -> ON 상태로 전환
-          if (button_press_duration < (1000 / portTICK_PERIOD_MS))
+          if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
           {
-            Current_Button_State = BUTTON_STATE_ON;
+            Button_State.Current_Button_State = BUTTON_STATE_ON;
           }
           break;
 
         case BUTTON_STATE_ON:
           // ON에서 1초 이하 클릭 -> STANDBY 상태로 전환
-          if (button_press_duration < (1000 / portTICK_PERIOD_MS))
+          if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
           {
-            Current_Button_State = BUTTON_STATE_STANDBY;
+            Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
           }
           break;
 
         case BUTTON_STATE_TIMER_SET:
           // TIMER_SET에서 1초 이하 클릭 -> 타이머 값 증가
-          if (button_press_duration < (1000 / portTICK_PERIOD_MS))
+          if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
           {
-            Timer_Value++;
-            if (Timer_Value > 10)
+            Button_State.Timer_Value++;
+            if (Button_State.Timer_Value > 10)
             {
-              Timer_Value = 5; // 10을 넘으면 1부터 다시 시작
+              Button_State.Timer_Value = 5; // 10을 넘으면 1부터 다시 시작
             }
             // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
-            Timer_Set_Inactive_Start_Time = current_time;
+            Button_State.Timer_Set_Inactive_Start_Time = Button_State.Button_Current_Time;
           }
           break;
 
         case BUTTON_STATE_TIMER_UP:
           // TIMER_UP에서 클릭 -> STANDBY로 복귀
-          if (button_press_duration < (1000 / portTICK_PERIOD_MS))
+          if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
           {
-            Current_Button_State = BUTTON_STATE_STANDBY;
+            Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
           }
           break;
 
@@ -580,35 +574,36 @@ void StartButtonTask(void *argument)
     }
 
     // 버튼이 계속 눌려있는 상태에서 1.5초 이상 지나면 처리
-    if (Button_Pressed && (current_time - Button_Press_Start_Time) >= (1500 / portTICK_PERIOD_MS))
+    if (!Button_State.is_pushed_changed && is_Button_Pressed &&
+        (Button_State.Button_Current_Time - Button_State.Button_Press_Start_Time) >= (1500 / portTICK_PERIOD_MS))
     {
-      if (Current_Button_State == BUTTON_STATE_STANDBY || Current_Button_State == BUTTON_STATE_ON)
+      if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY || Button_State.Current_Button_State == BUTTON_STATE_ON)
       {
-        Current_Button_State = BUTTON_STATE_TIMER_SET;
-        Timer_Set_Inactive_Start_Time = current_time; // TIMER_SET 진입시 비활성화 타이머 시작
-        Button_Pressed = 0;                           // 1.5초 이벤트 처리 후 중복 방지
+        Button_State.is_pushed_changed = true;
+        Button_State.Current_Button_State = BUTTON_STATE_TIMER_SET;
+        Button_State.Timer_Set_Inactive_Start_Time = Button_State.Button_Current_Time; // TIMER_SET 진입시 비활성화 타이머 시작
       }
-      else if (Current_Button_State == BUTTON_STATE_TIMER_SET)
+      else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
       {
         // TIMER_SET에서 1.5초 이상 누르면 STANDBY로 복귀
-        Current_Button_State = BUTTON_STATE_STANDBY;
-        Button_Pressed = 0; // 이벤트 처리 후 중복 방지
+        Button_State.is_pushed_changed = true;
+        Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
       }
     }
 
     // TIMER_SET 상태에서 5초간 비활성화시 STANDBY로 복귀
-    if (Current_Button_State == BUTTON_STATE_TIMER_SET)
+    if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET && is_Button_Released)
     {
-      if ((current_time - Timer_Set_Inactive_Start_Time) >= (5000 / portTICK_PERIOD_MS))
+      if ((Button_State.Button_Current_Time - Button_State.Timer_Set_Inactive_Start_Time) >= (5000 / portTICK_PERIOD_MS))
       {
-        Current_Button_State = BUTTON_STATE_STANDBY;
+        Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
       }
     }
 
     // 이전 상태 업데이트 (안정화된 상태에서만)
     if (button_stable_count >= 3)
     {
-      button_prev_state = button_current_state;
+      Button_State.Button_Prev_State = Button_State.Button_Current_State;
     }
 
     vTaskDelayUntil(&lastWakeTime, 10 * portTICK_PERIOD_MS);
@@ -628,6 +623,8 @@ void Callback01(void *argument)
 // 스택 오버플로우 후크 함수
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
+  UNUSED(xTask);
+  UNUSED(pcTaskName);
   /* 스택 오버플로우 발생시 System LED를 빠르게 깜빡이며 에러 표시 */
   while (1)
   {
