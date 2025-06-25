@@ -95,6 +95,10 @@ void Callback01(void *argument);
 #define System_LED_Pin GPIO_PIN_9
 #define System_LED_GPIO_Port GPIOB
 
+#define DUTY_100 800
+#define DUTY_50 400
+#define DUTY_0 0
+
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

@@ -251,10 +251,10 @@ void StartAdcTask(void *argument)
   ADC_ChannelConfTypeDef sConfig1 = {0}; // ADC1용 설정
   ADC_ChannelConfTypeDef sConfig2 = {0}; // ADC2용 설정
 
-// 이동평균 필터를 위한 변수들
-#define FILTER_SIZE 8
-  uint16_t vbat_buffer[FILTER_SIZE] = {0};
-  uint8_t filter_index = 0;
+  // 이동평균 필터를 위한 변수들
+  // #define FILTER_SIZE 8
+  //   uint16_t vbat_buffer[FILTER_SIZE] = {0};
+  //   uint8_t filter_index = 0;
 
   // LED 상태 관련 변수들
   LED_State_t prev_LED1_State = LED_STATE_FLOATING;
@@ -262,19 +262,18 @@ void StartAdcTask(void *argument)
   uint32_t current_time = 0;
   uint16_t target_duty = 0;
 
+  uint8_t last_button_state = 0;
+
   // PWM 시작
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
 
   /* Infinite loop */
   for (;;)
   {
-    uint32_t sum;
-    uint16_t temp_adc_value;
-
     // LED1 ADC - ADC2 Channel 10 읽기
     sConfig2.Channel = ADC_CHANNEL_10;
     sConfig2.Rank = ADC_REGULAR_RANK_1;
-    sConfig2.SamplingTime = ADC_SAMPLETIME_24CYCLES_5;
+    sConfig2.SamplingTime = ADC_SAMPLETIME_92CYCLES_5;
     sConfig2.SingleDiff = ADC_SINGLE_ENDED;
     sConfig2.OffsetNumber = ADC_OFFSET_NONE;
     sConfig2.Offset = 0;
@@ -288,7 +287,7 @@ void StartAdcTask(void *argument)
     // LED2 ADC - ADC2 Channel 15 읽기
     sConfig2.Channel = ADC_CHANNEL_15;
     sConfig2.Rank = ADC_REGULAR_RANK_1;
-    sConfig2.SamplingTime = ADC_SAMPLETIME_24CYCLES_5;
+    sConfig2.SamplingTime = ADC_SAMPLETIME_92CYCLES_5;
     sConfig2.SingleDiff = ADC_SINGLE_ENDED;
     sConfig2.OffsetNumber = ADC_OFFSET_NONE;
     sConfig2.Offset = 0;
@@ -302,7 +301,7 @@ void StartAdcTask(void *argument)
     // VBat ADC - ADC1 Channel 16 읽기
     sConfig1.Channel = ADC_CHANNEL_16;
     sConfig1.Rank = ADC_REGULAR_RANK_1;
-    sConfig1.SamplingTime = ADC_SAMPLETIME_24CYCLES_5;
+    sConfig1.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
     sConfig1.SingleDiff = ADC_SINGLE_ENDED;
     sConfig1.OffsetNumber = ADC_OFFSET_NONE;
     sConfig1.Offset = 0;
@@ -310,22 +309,21 @@ void StartAdcTask(void *argument)
 
     HAL_ADC_Start(&hadc1);
     HAL_ADC_PollForConversion(&hadc1, 1000);
-    temp_adc_value = HAL_ADC_GetValue(&hadc1);
+    VBat_ADC_Value = HAL_ADC_GetValue(&hadc1);
     HAL_ADC_Stop(&hadc1);
 
-    // VBat에만 이동평균 필터 적용
-    vbat_buffer[filter_index] = temp_adc_value;
-    sum = 0;
-    for (int i = 0; i < FILTER_SIZE; i++)
-    {
-      sum += vbat_buffer[i];
-    }
-    VBat_ADC_Value = sum / FILTER_SIZE;
+    // // VBat에만 이동평균 필터 적용
+    // vbat_buffer[filter_index] = temp_adc_value;
+    // sum = 0;
+    // for (int i = 0; i < FILTER_SIZE; i++)
+    // {
+    //   sum += vbat_buffer[i];
+    // }
+    // VBat_ADC_Value = sum / FILTER_SIZE;
 
-    // 필터 인덱스 업데이트
-    filter_index = (filter_index + 1) % FILTER_SIZE;
+    // // 필터 인덱스 업데이트
+    // filter_index = (filter_index + 1) % FILTER_SIZE;
 
-    // LED 상태 판단
     // LED1 상태 판단
     if (LED1_ADC_Value == 0)
     {
@@ -372,32 +370,51 @@ void StartAdcTask(void *argument)
       if (LED1_State == LED_STATE_LOW && LED2_State == LED_STATE_LOW)
       {
         // 둘다 Low -> 듀티 100%
-        target_duty = 800; // 800/800 = 100%
+        target_duty = DUTY_100;
       }
-      else if (LED1_State == LED_STATE_HIGH && LED2_State == LED_STATE_HIGH)
+      else if (LED1_State == LED_STATE_HIGH || LED2_State == LED_STATE_HIGH)
       {
         // 둘다 High -> 듀티 100%
-        target_duty = 800; // 800/800 = 100%
+        target_duty = DUTY_100;
       }
       else if (LED1_State == LED_STATE_FLOATING && LED2_State == LED_STATE_FLOATING)
       {
         // 둘다 Floating -> 듀티 0%
-        target_duty = 0;
+        target_duty = DUTY_0;
       }
-      else if ((LED1_State == LED_STATE_LOW && LED2_State != LED_STATE_LOW) ||
-               (LED2_State == LED_STATE_LOW && LED1_State != LED_STATE_LOW))
+      else if ((LED1_State == LED_STATE_LOW && LED2_State == LED_STATE_FLOATING) ||
+               (LED2_State == LED_STATE_LOW && LED1_State == LED_STATE_FLOATING))
       {
         // 1개만 Low -> 듀티 50%
-        target_duty = 400; // 400/800 = 50%
+        target_duty = DUTY_50;
       }
       else if ((LED1_State == LED_STATE_HIGH && LED2_State != LED_STATE_HIGH) ||
                (LED2_State == LED_STATE_HIGH && LED1_State != LED_STATE_HIGH))
       {
         // 1개만 High -> 듀티 100%
-        target_duty = 800; // 800/800 = 100%
+        target_duty = DUTY_100;
       }
 
-      // PWM 듀티 업데이트
+      if (Current_PWM_Duty != target_duty)
+      {
+        Current_PWM_Duty = target_duty;
+        State_Start_Time = 0;
+
+        if (Current_Button_State == BUTTON_STATE_ON)
+        {
+          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
+        }
+        else if (Current_Button_State == BUTTON_STATE_STANDBY)
+        {
+          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, DUTY_0);
+        }
+      }
+    }
+    else if (Current_PWM_Duty != 0 && LED1_State == LED_STATE_FLOATING && LED2_State == LED_STATE_FLOATING)
+    {
+      // 둘다 Floating -> 듀티 0%
+      target_duty = DUTY_0;
+
       if (Current_PWM_Duty != target_duty)
       {
         Current_PWM_Duty = target_duty;
@@ -405,14 +422,18 @@ void StartAdcTask(void *argument)
         State_Start_Time = 0;
       }
     }
-    else if (Current_PWM_Duty != 0 && LED1_State == LED_STATE_FLOATING && LED2_State == LED_STATE_FLOATING)
-    {
-      // 둘다 Floating -> 듀티 0%
-      target_duty = 0;
 
-      Current_PWM_Duty = target_duty;
-      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
-      State_Start_Time = 0;
+    if (last_button_state != Current_Button_State)
+    {
+      last_button_state = Current_Button_State;
+      if (Current_Button_State == BUTTON_STATE_ON)
+      {
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Current_PWM_Duty);
+      }
+      else if (Current_Button_State == BUTTON_STATE_STANDBY)
+      {
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, DUTY_0);
+      }
     }
 
     vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
