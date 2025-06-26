@@ -35,7 +35,7 @@ rule C_COMPILER__OnBoardCtrl_FW_unscanned_Debug
 # Rule for linking C executable.
 
 rule C_EXECUTABLE_LINKER__OnBoardCtrl_FW_Debug
-  command = cmd.exe /C "$PRE_LINK && C:\ST\STM32CubeCLT_1.18.0\GNU-tools-for-STM32\bin\arm-none-eabi-gcc.exe $FLAGS -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -T "C:/Users/ym720/Git-projects/OnBoard_FW/STM32L412XX_FLASH.ld" --specs=nano.specs -Wl,-Map=OnBoardCtrl_FW.map -Wl,--gc-sections -Wl,--start-group -lc -lm -Wl,--end-group -Wl,--print-memory-usage $LINK_FLAGS $in -o $TARGET_FILE $LINK_PATH $LINK_LIBRARIES && $POST_BUILD"
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\ST\STM32CubeCLT_1.18.0\GNU-tools-for-STM32\bin\arm-none-eabi-gcc.exe $FLAGS -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -T "C:/Users/ym720/Git-projects/OnBoard_FW/STM32L412XX_FLASH.ld" --specs=nano.specs -Wl,-Map=OnBoardCtrl_FW.map -Wl,--gc-sections -Wl,--start-group -lc -lm -Wl,--end-group -Wl,--print-memory-usage $LINK_FLAGS $in -o $TARGET_FILE $LINK_PATH $LINK_LIBRARIES && $POST_BUILD"
   description = Linking C executable $TARGET_FILE
   restat = $RESTAT
 
@@ -74,6 +74,15 @@ rule C_COMPILER__FreeRTOS_unscanned_Debug
 rule RERUN_CMAKE
   command = C:\ST\STM32CubeCLT_1.18.0\CMake\bin\cmake.exe --regenerate-during-build -SC:\Users\ym720\Git-projects\OnBoard_FW -BC:\Users\ym720\Git-projects\OnBoard_FW
   description = Re-running CMake...
+  generator = 1
+
+
+#############################################
+# Rule for re-checking globbed directories.
+
+rule VERIFY_GLOBS
+  command = C:\ST\STM32CubeCLT_1.18.0\CMake\bin\cmake.exe -P C:\Users\ym720\Git-projects\OnBoard_FW\CMakeFiles\VerifyGlobs.cmake
+  description = Re-checking globbed directories...
   generator = 1
 
 
