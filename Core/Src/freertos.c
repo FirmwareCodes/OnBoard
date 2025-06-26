@@ -31,6 +31,7 @@
 #include "fonts.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 /* USER CODE END Includes */
 
@@ -448,9 +449,6 @@ void StartDisplayTask(void *argument)
   // 애니메이션 시스템 초기화
   Animation_Init();
 
-  // 애니메이션 인덱스들
-  static uint8_t setup_blink_anim = 255;
-
   // Paint 시스템 초기화
   Paint_NewImage(BlackImage, 128, 64, 180, WHITE);
   Paint_SelectImage(BlackImage);
@@ -469,163 +467,78 @@ void StartDisplayTask(void *argument)
     // UI 카운터 증가 (깜빡임 효과용)
     ui_blink_counter++;
 
-    // === 128x64 OLED 가시성 최적화 UI ===
+    // === 원형 프로그래스 배터리 UI ===
 
-    // 상단 라인 (0-15px): LED 연결 상태만 표시
-    // L1 상태 - 연결 상태에 따른 애니메이션 효과
-    Paint_DrawString_EN(3, 2, "L1:", &Font12, WHITE, BLACK);
-    if (Adc_State.LED1_State != LED_STATE_FLOATING)
-    {
-      // 연결됨 - 부드러운 깜빡임 효과
-      uint8_t brightness = 255;
-      if ((ui_blink_counter / 10) % 2 == 0)
-        brightness = 180;
-      DRAW_ICON(23, 0, ICON_CONNECTED, brightness > 200 ? WHITE : GRAY, BLACK);
-    }
-    else
-    {
-      DRAW_ICON(23, 0, ICON_DISCONNECTED, WHITE, BLACK);
-    }
-
-    // L2 상태 - 연결 상태에 따른 애니메이션 효과
-    Paint_DrawString_EN(43, 2, "L2:", &Font12, WHITE, BLACK);
-    if (Adc_State.LED2_State != LED_STATE_FLOATING)
-    {
-      // 연결됨 - 부드러운 깜빡임 효과
-      uint8_t brightness = 255;
-      if ((ui_blink_counter / 10) % 2 == 0)
-        brightness = 180;
-      DRAW_ICON(63, 0, ICON_CONNECTED, brightness > 200 ? WHITE : GRAY, BLACK);
-    }
-    else
-    {
-      DRAW_ICON(63, 0, ICON_DISCONNECTED, WHITE, BLACK);
-    }
-
-    // 배터리 상태 - 아이콘 애니메이션
+    // 배터리 상태 계산
     uint8_t bat_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value - 700) / 2200 * 100);
-
     if (bat_percent > 100)
     {
       bat_percent = 0;
     }
 
-    // 배터리 레벨에 따른 아이콘 선택 (7단계)
-    uint8_t battery_icon;
-    if (bat_percent > 85)
-    {
-      battery_icon = ICON_BATTERY_HIGH; // 80% 이상: 높음
-    }
-    else if (bat_percent > 70)
-    {
-      battery_icon = ICON_BATTERY_MIDHIGH; // 65-80%: 중상
-    }
-    else if (bat_percent > 55)
-    {
-      battery_icon = ICON_BATTERY_MID; // 50-65%: 중간
-    }
-    else if (bat_percent > 40)
-    {
-      battery_icon = ICON_BATTERY_MIDLOW; // 35-50%: 중하
-    }
-    else if (bat_percent > 25)
-    {
-      battery_icon = ICON_BATTERY_LOW; // 20-35%: 낮음
-    }
-    else if (bat_percent > 10)
-    {
-      battery_icon = ICON_BATTERY_VERY_LOW; // 10-20%: 매우 낮음
-    }
-    else
-    {
-      battery_icon = ICON_BATTERY_EMPTY; // 10% 이하: 빈 배터리
-      // 배터리 부족시 깜빡임
-      if ((ui_blink_counter / 15) % 2 == 0)
-      {
-        battery_icon = ICON_SPACE;
-      }
-    }
+    // 화면 중앙 좌표
+    uint16_t center_x = 64;
+    uint16_t center_y = 32;
 
-    DRAW_ICON(108, 1, battery_icon, WHITE, BLACK);
+    // 원형 배터리 프로그래스 애니메이션
+    Draw_AnimatedBatteryCircle(center_x, center_y, bat_percent, ui_blink_counter);
 
-    // 구분선
-    Paint_DrawLine(0, 15, 127, 15, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    // 중앙에 배터리 퍼센티지 표시
+    sprintf(display_text, "%d%%", bat_percent);
+    uint8_t text_width = (bat_percent < 100) ? 24 : 36; // Font12 기준 대략적인 너비
+    Paint_DrawString_EN(center_x - text_width/2, center_y - 6, display_text, &Font12, WHITE, BLACK);
 
-    // 하단 3줄 (16-63px): 큰 타이머 표시
+    // 상단: 타이머 설정값과 상태
+    sprintf(display_text, "%dm", Button_State.Timer_Value);
+    Paint_DrawString_EN(2, 2, display_text, &Font12, WHITE, BLACK);
+
+    // 상태 아이콘 (우측 상단)
     if (Button_State.is_Start_Timer)
     {
-      DRAW_ICON(2, 16, ICON_PLAY, WHITE, BLACK);
-      sprintf(display_text, "%d min", Button_State.Timer_Value);
-      Paint_DrawString_EN(Button_State.Timer_Value < 10 ? 85 : 80, 16, display_text, &Font12, WHITE, BLACK);
-
-      sprintf(display_text, "%02d:%02d", Button_State.minute_count, Button_State.second_count);
-      Paint_DrawString_EN(22, 30, display_text, &Font24, WHITE, BLACK);
+      DRAW_ICON(108, 2, ICON_SMALL_PLAY, WHITE, BLACK);
     }
     else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
     {
-      DRAW_ICON(2, 16, ICON_TIMER_SET, WHITE, BLACK);
-
-      // 타이머 설정 모드 - 깜빡이는 애니메이션
-      sprintf(display_text, "SETUP");
-      Paint_DrawString_EN(45, 20, display_text, &Font12, WHITE, BLACK);
-
-      // 부드러운 깜빡이는 설정값
-      if (setup_blink_anim == 255)
-      {
-        setup_blink_anim = Animation_Start(ANIM_TYPE_BLINK, 255);
-      }
-
-      if (Animation_GetValue(setup_blink_anim) > 128)
-      {
-        sprintf(display_text, "%d min", Button_State.Timer_Value);
-        Paint_DrawString_EN(Button_State.Timer_Value < 10 ? 45 : 40, 35, display_text, &Font12, WHITE, BLACK);
-      }
-
-      Paint_DrawString_EN(25, 50, "PRESS +2min", &Font12, WHITE, BLACK);
+      DRAW_ICON(108, 2, ICON_SMALL_TIMER, WHITE, BLACK);
+    }
+    else if (Button_State.is_start_to_cooling)
+    {
+      DRAW_ICON(108, 2, ICON_SMALL_STOP, WHITE, BLACK);
     }
     else
     {
-      // 애니메이션 리셋
-      setup_blink_anim = 255;
-
-      if (!Button_State.is_start_to_cooling)
-      {
-        DRAW_ICON(2, 16, ICON_STANDBY, WHITE, BLACK);
-        // 대기 모드
-        sprintf(display_text, "READY");
-        Paint_DrawString_EN(45, 20, display_text, &Font12, WHITE, BLACK);
-
-        sprintf(display_text, "%d min", Button_State.Timer_Value);
-        Paint_DrawString_EN(Button_State.Timer_Value < 10 ? 45 : 40, 35, display_text, &Font12, WHITE, BLACK);
-
-        Paint_DrawString_EN(25, 50, "PRESS START", &Font12, WHITE, BLACK);
-      }
-      else
-      {
-        DRAW_ICON(2, 16, ICON_STOP, WHITE, BLACK);
-
-        // 쿨링 모드 - 깜빡이는 텍스트
-        if ((ui_blink_counter / 10) % 2 == 0)
-        {
-          sprintf(display_text, "COOLING");
-          Paint_DrawString_EN(38, 20, display_text, &Font12, WHITE, BLACK);
-        }
-
-        sprintf(display_text, "%d sec", Button_State.cooling_second);
-        Paint_DrawString_EN(Button_State.cooling_second < 10 ? 45 : 40, 35, display_text, &Font12, WHITE, BLACK);
-
-        Paint_DrawString_EN(25, 50, "PLEASE WAIT", &Font12, WHITE, BLACK);
-
-        // 쿨링 진행률 표시
-        float cooling_progress = 1.0f - ((float)Button_State.cooling_second / 60.0f);
-        uint8_t cooling_width = (uint8_t)(cooling_progress * 100);
-        Paint_DrawRectangle(14, 55, 14 + cooling_width, 57, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-        Paint_DrawRectangle(13, 54, 115, 58, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-      }
+      DRAW_ICON(108, 2, ICON_SMALL_READY, WHITE, BLACK);
     }
 
-    // 화면 테두리
-    Paint_DrawRectangle(1, 1, 128, 64, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    // 하단 정보 표시
+    if (Button_State.is_Start_Timer)
+    {
+      // 타이머 실행 중 - 남은 시간 표시
+      sprintf(display_text, "%02d:%02d", Button_State.minute_count, Button_State.second_count);
+      Paint_DrawString_EN(center_x - 30, 50, display_text, &Font12, WHITE, BLACK);
+    }
+    else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+    {
+      // 설정 모드 - 깜빡이는 텍스트
+      if ((ui_blink_counter / 10) % 2 == 0)
+      {
+        Paint_DrawString_EN(center_x - 24, 50, "SETUP", &Font12, WHITE, BLACK);
+      }
+    }
+    else if (Button_State.is_start_to_cooling)
+    {
+      // 쿨링 모드 - 쿨링 시간 표시
+      sprintf(display_text, "Cool:%ds", Button_State.cooling_second);
+      Paint_DrawString_EN(center_x - 36, 50, display_text, &Font12, WHITE, BLACK);
+    }
+    else
+    {
+  
+    }
+
+    // 배터리 전압 표시 (좌측 하단, 작은 글씨)
+    sprintf(display_text, "%dmV", Adc_State.VBat_ADC_Value);
+    Paint_DrawString_EN(2, 54, display_text, &Font12, WHITE, BLACK);
 
     // 디스플레이 업데이트
     OLED_1in3_C_Display(BlackImage);
@@ -860,3 +773,100 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 }
 
 /* USER CODE END Application */
+
+// 원형 프로그래스바 그리기 함수
+void Draw_CircularProgress(uint16_t center_x, uint16_t center_y, uint8_t radius, uint8_t percent, uint16_t color)
+{
+  // 두께 5픽셀의 배경 원 (외곽선) - 하단 30도 제외 (165도부터 375도까지, 330도 구간)
+  for (uint16_t angle_deg = 165; angle_deg < 375; angle_deg += 2)
+  {
+    float angle = angle_deg * 3.14159f / 180.0f;
+    
+    // 두께 5픽셀로 테두리 그리기
+    for (uint8_t thickness = 0; thickness < 5; thickness++)
+    {
+      uint8_t current_radius = radius - thickness;
+      uint16_t x = center_x + (uint16_t)(current_radius * cos(angle));
+      uint16_t y = center_y + (uint16_t)(current_radius * sin(angle));
+      Paint_DrawPoint(x, y, WHITE, DOT_PIXEL_1X1, DOT_STYLE_DFT);
+    }
+  }
+
+  // 진행률에 따른 호 그리기 (우측 하단 135도에서 시작하여 시계방향)
+  // 0%: 135도, 100%: 135도 + 330도 = 465도 (실제로는 105도)
+  uint16_t progress_angle_range = (percent * 330) / 100; // 330도 범위에서 진행률 계산
+  
+  for (uint16_t i = 0; i < progress_angle_range; i += 2)
+  {
+    uint16_t current_angle_deg = 135 + i; // 135도(우측 하단)에서 시작
+    if (current_angle_deg >= 360) current_angle_deg -= 360; // 360도 넘으면 보정
+    
+    float angle = current_angle_deg * 3.14159f / 180.0f;
+    
+    // 두께 5픽셀로 진행률 표시
+    for (uint8_t thickness = 0; thickness < 5; thickness++)
+    {
+      uint8_t current_radius = radius - thickness;
+      uint16_t x = center_x + (uint16_t)(current_radius * cos(angle));
+      uint16_t y = center_y + (uint16_t)(current_radius * sin(angle));
+      Paint_DrawPoint(x, y, color, DOT_PIXEL_1X1, DOT_STYLE_DFT);
+    }
+  }
+}
+
+// 원형 배터리 상태 애니메이션
+void Draw_AnimatedBatteryCircle(uint16_t center_x, uint16_t center_y, uint8_t percent, uint32_t frame_counter)
+{
+  uint8_t radius = 30;
+  uint16_t progress_color = WHITE;
+  
+  // 배터리 상태에 따른 색상 및 애니메이션 효과
+  if (percent <= 10)
+  {
+    // 위험 상태 - 빨간색 깜빡임 효과 (흰색/검정 교체)
+    if ((frame_counter / 10) % 2 == 0)
+      progress_color = WHITE;
+    else
+      progress_color = BLACK;
+    
+    // 위험 경고 점들 - 원형 프로그래스 주변에 배치
+    for (uint16_t i = 0; i < 6; i++)
+    {
+      // 165도부터 105도까지 6개 점 배치 (하단 30도 제외 구간)
+      float angle = (165 + i * 55) * 3.14159f / 180.0f; // 55도씩 간격
+      uint16_t x = center_x + (uint16_t)((radius + 8) * cos(angle));
+      uint16_t y = center_y + (uint16_t)((radius + 8) * sin(angle));
+      if ((frame_counter / 5) % 2 == 0)
+        Paint_DrawPoint(x, y, WHITE, DOT_PIXEL_2X2, DOT_STYLE_DFT);
+    }
+  }
+  else if (percent <= 20)
+  {
+    // 부족 상태 - 느린 깜빡임
+    if ((frame_counter / 20) % 2 == 0)
+      progress_color = WHITE;
+    else
+      progress_color = WHITE; // 계속 표시하되 밝기 변화
+  }
+  else
+  {
+    progress_color = WHITE;
+  }
+  
+  // 원형 프로그래스 그리기
+  Draw_CircularProgress(center_x, center_y, radius, percent, progress_color);
+  
+  // 부드러운 애니메이션을 위한 추가 효과
+  if (percent > 20)
+  {
+    // 정상 상태일 때 프로그래스 경로를 따라 움직이는 점 효과
+    // 우측 하단에서 시작하여 진행률에 따라 이동
+    uint16_t effect_angle_deg = 135 + ((frame_counter * 5) % 330); // 330도 범위에서 순환
+    if (effect_angle_deg >= 495) effect_angle_deg -= 330; // 순환 처리
+    
+    float effect_angle = effect_angle_deg * 3.14159f / 180.0f;
+    uint16_t effect_x = center_x + (uint16_t)((radius + 3) * cos(effect_angle));
+    uint16_t effect_y = center_y + (uint16_t)((radius + 3) * sin(effect_angle));
+    Paint_DrawPoint(effect_x, effect_y, WHITE, DOT_PIXEL_2X2, DOT_STYLE_DFT);
+  }
+}
