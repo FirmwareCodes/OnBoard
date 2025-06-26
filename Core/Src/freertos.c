@@ -27,6 +27,7 @@
 #include "GUI_Paint.h"
 #include "OLED_1in3_c.h"
 #include "ImageData.h"
+#include "def.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,7 +101,9 @@ Adc_t Adc_State = {
 
 Button_t Button_State = {
     .Timer_Value = 5,                             // 타이머 초기값
-    .Timer_Set_Inactive_Start_Time = 0,           // TIMER_SET 상태 비활성화 시간
+    .Timer_Set_Start_Time = 0,                    // TIMER_SET 상태 비활성화 시간
+    .second_count = 0,                            // 타이머 초 카운트
+    .minute_count = 0,                            // 타이머 분 카운트
     .Current_Button_State = BUTTON_STATE_STANDBY, // 현재 버튼 상태
     .Button_Press_Start_Time = 0,                 // 버튼 누름 시작 시간
     .Button_Press_Duration = 0,                   // 버튼 누름 지속 시간
@@ -184,7 +187,6 @@ void RTOS_Start(void)
   /* Create the event(s) */
   /* creation of MainStatusEvent */
   MainStatusEventHandle = osEventFlagsNew(&MainStatusEvent_attributes);
-
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
@@ -211,6 +213,8 @@ void StartOneSecondTask(void *argument)
   /* Infinite loop */
   for (;;)
   {
+    // 타이머 시작 시간
+
     HAL_GPIO_TogglePin(System_LED_GPIO_Port, System_LED_Pin);
     vTaskDelayUntil(&lastWakeTime, 1000 * portTICK_PERIOD_MS);
   }
@@ -383,11 +387,11 @@ void StartAdcTask(void *argument)
         Adc_State.Current_PWM_Duty = target_duty;
         Adc_State.State_Start_Time = 0;
 
-        if (Button_State.Current_Button_State == BUTTON_STATE_ON)
+        if (Button_State.is_Start_Timer)
         {
           __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Adc_State.Current_PWM_Duty);
         }
-        else if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
+        else if (!Button_State.is_Start_Timer)
         {
           __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, DUTY_0);
         }
@@ -406,14 +410,14 @@ void StartAdcTask(void *argument)
       }
     }
 
-    if (last_button_state != Button_State.Current_Button_State)
+    if (last_button_state != Button_State.is_Start_Timer)
     {
-      last_button_state = Button_State.Current_Button_State;
-      if (Button_State.Current_Button_State == BUTTON_STATE_ON)
+      last_button_state = Button_State.is_Start_Timer;
+      if (Button_State.is_Start_Timer)
       {
         __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, Adc_State.Current_PWM_Duty);
       }
-      else if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
+      else if (!Button_State.is_Start_Timer)
       {
         __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, DUTY_0);
       }
@@ -446,11 +450,36 @@ void StartDisplayTask(void *argument)
     Paint_DrawRectangle(1, 1, 128, 64, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
     // Paint_DrawLine(80, 20, 80, 64, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID); // y-axis line
     // Paint_DrawLine(0, 20, 128, 20, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID); // x-axis line
+    char *button_state_str = (char *)(Button_State.is_Start_Timer == true ? "ON" : Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET ? "TIMER Set"
+                                                                                                                                               : "OFF");
+    Paint_DrawString_EN(5, 5, button_state_str, &Font12, 0, 0xFF);
+    if (Button_State.is_Start_Timer)
+    {
+      char timer_str[12];
+      sprintf(timer_str, "%1d m %02d s", (uint8_t)Button_State.minute_count, (uint8_t)Button_State.second_count);
+      Paint_DrawString_EN(60, 5, timer_str, &Font12, 0, 0xFF);
+    }
 
-    // Paint_DrawNum(27, 5, Dimming, &Font12, 0, 0xFF, 0x00);
-
-    // Paint_DrawString_EN(5, 24, "Temp:   'C", &Font12, 0x00, 0xFF);
-    // Paint_DrawNum(42, 24, Direction, &Font12, 0, 0xFF, 0x00);
+    if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+    {
+      char timer_set_str[15];
+      uint8_t blank_count = (lastWakeTime / 300) % 3;
+      if (blank_count == 0)
+      {
+        strcpy(timer_set_str, "");
+      }
+      else
+      {
+        sprintf(timer_set_str, "Timer: %d min", Button_State.Timer_Value);
+      }
+      Paint_DrawString_EN(5, 24, timer_set_str, &Font12, 0x00, 0xFF);
+    }
+    else
+    {
+      char timer_set_str[15];
+      sprintf(timer_set_str, "Timer: %d min", Button_State.Timer_Value);
+      Paint_DrawString_EN(5, 24, timer_set_str, &Font12, 0x00, 0xFF);
+    }
 
     OLED_1in3_C_Display(BlackImage);
 
@@ -473,10 +502,10 @@ void StartButtonTask(void *argument)
   TickType_t lastWakeTime;
   lastWakeTime = xTaskGetTickCount();
 
-  bool is_Button_Pressed = false;    // 버튼 누름 상태
-  bool is_Button_Released = false;   // 버튼 릴리즈 상태
+  bool is_Button_Pressed = false;                   // 버튼 누름 상태
+  bool is_Button_Released = false;                  // 버튼 릴리즈 상태
   GPIO_PinState button_stable_state = GPIO_PIN_SET; // 버튼 바운드 상태
-  uint8_t button_stable_count = 0;       // 버튼 바운드 카운트
+  uint8_t button_stable_count = 0;                  // 버튼 바운드 카운트
 
   /* Infinite loop */
   for (;;)
@@ -533,15 +562,13 @@ void StartButtonTask(void *argument)
           // STANDBY에서 1초 이하 클릭 -> ON 상태로 전환
           if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
           {
-            Button_State.Current_Button_State = BUTTON_STATE_ON;
-          }
-          break;
-
-        case BUTTON_STATE_ON:
-          // ON에서 1초 이하 클릭 -> STANDBY 상태로 전환
-          if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
-          {
-            Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
+            Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
+            if (Button_State.is_Start_Timer)
+            {
+              osTimerStart(MainTimerHandle, 1001);
+              Button_State.minute_count = 0;
+              Button_State.second_count = 0;
+            }
           }
           break;
 
@@ -552,18 +579,10 @@ void StartButtonTask(void *argument)
             Button_State.Timer_Value++;
             if (Button_State.Timer_Value > 10)
             {
-              Button_State.Timer_Value = 5; // 10을 넘으면 1부터 다시 시작
+              Button_State.Timer_Value = 1; // 10을 넘으면 1부터 다시 시작
             }
             // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
-            Button_State.Timer_Set_Inactive_Start_Time = Button_State.Button_Current_Time;
-          }
-          break;
-
-        case BUTTON_STATE_TIMER_UP:
-          // TIMER_UP에서 클릭 -> STANDBY로 복귀
-          if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
-          {
-            Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
+            Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
           }
           break;
 
@@ -577,11 +596,11 @@ void StartButtonTask(void *argument)
     if (!Button_State.is_pushed_changed && is_Button_Pressed &&
         (Button_State.Button_Current_Time - Button_State.Button_Press_Start_Time) >= (1500 / portTICK_PERIOD_MS))
     {
-      if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY || Button_State.Current_Button_State == BUTTON_STATE_ON)
+      if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY || Button_State.is_Start_Timer)
       {
         Button_State.is_pushed_changed = true;
         Button_State.Current_Button_State = BUTTON_STATE_TIMER_SET;
-        Button_State.Timer_Set_Inactive_Start_Time = Button_State.Button_Current_Time; // TIMER_SET 진입시 비활성화 타이머 시작
+        Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time; // TIMER_SET 진입시 비활성화 타이머 시작
       }
       else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
       {
@@ -594,7 +613,7 @@ void StartButtonTask(void *argument)
     // TIMER_SET 상태에서 5초간 비활성화시 STANDBY로 복귀
     if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET && is_Button_Released)
     {
-      if ((Button_State.Button_Current_Time - Button_State.Timer_Set_Inactive_Start_Time) >= (5000 / portTICK_PERIOD_MS))
+      if ((Button_State.Button_Current_Time - Button_State.Timer_Set_Start_Time) >= (5000 / portTICK_PERIOD_MS))
       {
         Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
       }
@@ -616,6 +635,26 @@ void Callback01(void *argument)
 {
   /* USER CODE BEGIN Callback01 */
   UNUSED(argument);
+  if (Button_State.is_Start_Timer)
+  {
+    Button_State.second_count++;
+    if (Button_State.second_count > 59)
+    {
+      Button_State.minute_count++;
+      Button_State.second_count = 0;
+    }
+  }
+  else if (!Button_State.is_Start_Timer)
+  {
+    Button_State.second_count = 0;
+    Button_State.minute_count = 0;
+  }
+
+  if (Button_State.minute_count >= Button_State.Timer_Value)
+  {
+    Button_State.is_Start_Timer = false;
+    osTimerStop(MainTimerHandle);
+  }
 
   /* USER CODE END Callback01 */
 }

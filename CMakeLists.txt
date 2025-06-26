@@ -49,7 +49,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 file(GLOB SRC_FILES CONFIGURE_DEPENDS
 App/Common/Src/*.c
 App/Common/Src/OLED/*.c
-App/Common/Font/*.c
+App/Common/Fonts/*.c
 App/Hw/Src/*.c
 App/Hw/*.c
 
@@ -69,13 +69,18 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     App/Common
     App/Common/Inc
     App/Common/Inc/OLED
-    App/Common/Font
+    App/Common/Fonts
 
 )
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
+)
+
+# Add compiler flags to suppress font warnings
+target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -Wno-missing-braces
 )
 
 # Add linked libraries

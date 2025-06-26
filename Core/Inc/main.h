@@ -50,9 +50,7 @@ extern "C"
   typedef enum
   {
     BUTTON_STATE_STANDBY = 0,
-    BUTTON_STATE_ON,
     BUTTON_STATE_TIMER_SET,
-    BUTTON_STATE_TIMER_UP,
   } Button_State_t;
 
   typedef struct
@@ -70,19 +68,24 @@ extern "C"
   // 버튼 제어를 위한 변수들
   typedef struct
   {
-    uint8_t Timer_Value;                    // 타이머 초기값 5
-    uint32_t Timer_Set_Inactive_Start_Time; // TIMER_SET 상태 비활성화 시간 추적
+    uint8_t Timer_Value;           // 타이머 초기값 5
+    uint32_t Timer_Set_Start_Time; // TIMER_SET 상태 비활성화 시간 추적
+
+    uint32_t second_count; // 타이머 초 카운트
+    uint32_t minute_count; // 타이머 분 카운트
 
     Button_State_t Current_Button_State; // 현재 버튼 상태
-    uint32_t Button_Press_Start_Time;    // 버튼 누름 시작 시간
+    bool is_Start_Timer;                 // 타이머 시작 여부
 
-    GPIO_PinState Button_Current_State;  // 현재 버튼 상태
-    GPIO_PinState Button_Prev_State;     // 이전 버튼 상태
-    uint32_t Button_Press_Duration;      // 버튼 누름 지속 시간
-    uint32_t Button_Current_Time;        // 현재 시간
+    uint32_t Button_Press_Start_Time; // 버튼 누름 시작 시간
+
+    GPIO_PinState Button_Current_State; // 현재 버튼 상태
+    GPIO_PinState Button_Prev_State;    // 이전 버튼 상태
+    uint32_t Button_Press_Duration;     // 버튼 누름 지속 시간
+    uint32_t Button_Current_Time;       // 현재 시간
 
     // 버튼 안정화를 위한 디바운싱 변수
-    bool is_pushed_changed;            // 버튼 누름 상태로 인한 변경여부
+    bool is_pushed_changed; // 버튼 누름 상태로 인한 변경여부
   } Button_t;
   /* USER CODE END ET */
 
