@@ -39,7 +39,7 @@
 #ifndef __FONTS_H
 #define __FONTS_H
 
-/*�������΢���ź�24 (32x41) */
+/*중문字库24 (32x41) */
 #define MAX_HEIGHT_FONT         41
 #define MAX_WIDTH_FONT          32
 #define OFFSET_BITMAP           
@@ -62,10 +62,10 @@ typedef struct _tFont
 
 
 //GB2312
-typedef struct                                          // ������ģ���ݽṹ
+typedef struct                                          // 中文字模数据结构
 {
-  unsigned char index[2];                               // ������������
-  const char matrix[MAX_HEIGHT_FONT*MAX_WIDTH_FONT/8];  // ����������
+  unsigned char index[2];                               // 中文内码索引
+  const char matrix[MAX_HEIGHT_FONT*MAX_WIDTH_FONT/8];  // 点阵字模数据
 }CH_CN;
 
 
@@ -84,9 +84,33 @@ extern sFONT Font20;
 extern sFONT Font16;
 extern sFONT Font12;
 extern sFONT Font8;
+extern sFONT FontIcon16;    // Simple 16x16 Icon Font
+extern sFONT FontImage24;   // Simple 24x24 Image Font
 
 extern cFONT Font12CN;
 extern cFONT Font24CN;
+
+/* Simple Icon Font Character Mapping for FontIcon16 (128x64 OLED Optimized) */
+#define ICON_SPACE          ' '  // 0x20 - Empty space
+#define ICON_CONNECTED      '!'  // 0x21 - Connected O (큰 원)
+#define ICON_DISCONNECTED   '"'  // 0x22 - Disconnected X (큰 X)
+#define ICON_STANDBY        '#'  // 0x23 - STANDBY (사각형 안에 대기선)
+#define ICON_TIMER_SET      '$'  // 0x24 - TIMER SET (기어 모양)
+#define ICON_TIMER_RUNNING  '%'  // 0x25 - TIMER RUNNING (시계 모양)
+#define ICON_PLAY           '&'  // 0x26 - PLAY (재생 삼각형)
+#define ICON_STOP           '\'' // 0x27 - STOP (정지 사각형)
+#define ICON_UP_ARROW       '('  // 0x28 - UP Arrow (위쪽 화살표)
+#define ICON_DOT            ')'  // 0x29 - DOT (작은 점)
+#define ICON_PLUS           '*'  // 0x2A - PLUS (더하기)
+#define ICON_MINUS          '+'  // 0x2B - MINUS (빼기)
+#define ICON_NUMBER         ','  // 0x2C - NUMBER (숫자 표시용 사각형)
+#define ICON_CHECK          '-'  // 0x2D - CHECK (체크 표시)
+#define ICON_BATTERY        '.'  // 0x2E - BATTERY (배터리)
+#define ICON_SETTINGS       '/'  // 0x2F - SETTINGS (설정 기어)
+
+/* Helper macros for drawing icons */
+#define DRAW_ICON(x, y, icon, fg, bg)   Paint_DrawChar(x, y, icon, &FontIcon16, fg, bg)
+
 #ifdef __cplusplus
 }
 #endif

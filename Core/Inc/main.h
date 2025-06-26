@@ -71,8 +71,8 @@ extern "C"
     uint8_t Timer_Value;           // 타이머 초기값 5
     uint32_t Timer_Set_Start_Time; // TIMER_SET 상태 비활성화 시간 추적
 
-    uint32_t second_count; // 타이머 초 카운트
-    uint32_t minute_count; // 타이머 분 카운트
+    int8_t second_count; // 타이머 초 카운트
+    int8_t minute_count; // 타이머 분 카운트
 
     Button_State_t Current_Button_State; // 현재 버튼 상태
     bool is_Start_Timer;                 // 타이머 시작 여부
