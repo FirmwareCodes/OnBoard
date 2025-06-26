@@ -470,7 +470,7 @@ void StartDisplayTask(void *argument)
 
     // 상단 라인 (0-15px): LED 연결 상태만 표시
     // L1 상태
-    Paint_DrawString_EN(3, 1, "L1:", &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(3, 2, "L1:", &Font12, WHITE, BLACK);
     if (Adc_State.LED1_State != LED_STATE_FLOATING)
     {
       DRAW_ICON(23, 0, ICON_CONNECTED, WHITE, BLACK);
@@ -481,7 +481,7 @@ void StartDisplayTask(void *argument)
     }
 
     // L2 상태
-    Paint_DrawString_EN(43, 1, "L2:", &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(43, 2, "L2:", &Font12, WHITE, BLACK);
     if (Adc_State.LED2_State != LED_STATE_FLOATING)
     {
       DRAW_ICON(63, 0, ICON_CONNECTED, WHITE, BLACK);
@@ -516,7 +516,7 @@ void StartDisplayTask(void *argument)
       if ((ui_blink_counter / 5) % 2 == 0)
       {
         sprintf(display_text, "%d MIN", Button_State.Timer_Value);
-        Paint_DrawString_EN(40, 35, display_text, &Font12, WHITE, BLACK);
+        Paint_DrawString_EN(Button_State.Timer_Value < 10 ? 45 : 40, 35, display_text, &Font12, WHITE, BLACK);
       }
 
       Paint_DrawString_EN(25, 50, "PRESS +2min", &Font12, WHITE, BLACK);
@@ -528,7 +528,7 @@ void StartDisplayTask(void *argument)
       Paint_DrawString_EN(45, 20, display_text, &Font12, WHITE, BLACK);
 
       sprintf(display_text, "%d MIN", Button_State.Timer_Value);
-      Paint_DrawString_EN(40, 35, display_text, &Font12, WHITE, BLACK);
+      Paint_DrawString_EN(Button_State.Timer_Value < 10 ? 45 : 40, 35, display_text, &Font12, WHITE, BLACK);
 
       Paint_DrawString_EN(25, 50, "PRESS START", &Font12, WHITE, BLACK);
     }
