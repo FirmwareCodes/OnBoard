@@ -117,7 +117,7 @@ int main(void)
   OLED_1in3_c_test();
 
   Paint_Clear(BLACK);
-  OLED_1in3_C_Display(gImage_visol);
+  // OLED_1in3_C_Display(gImage_visol);
   HAL_Delay(1000);
   /* USER CODE END 2 */
 

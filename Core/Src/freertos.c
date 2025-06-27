@@ -367,13 +367,30 @@ void StartDisplayTask(void *argument)
   // 초기 화면 안정화를 위한 딜레이
   osDelay(200);
 
+  // UI 상태 초기화
+  UI_Status_t current_status = {
+      .battery_percent = 0,
+      .timer_minutes = 0,
+      .timer_seconds = 0,
+      .timer_status = TIMER_STATUS_STANDBY,
+      .l1_connected = LED_DISCONNECTED,
+      .l2_connected = LED_DISCONNECTED,
+      .cooling_seconds = 0,
+      .progress_update_counter = 0,
+      .blink_counter = 0,
+      .force_full_update = 1  // 첫 번째는 전체 업데이트
+  };
+
   /* Infinite loop */
   for (;;)
   {
+    // 카운터 증가
+    current_status.progress_update_counter++;
+    current_status.blink_counter++;
+    
     // 배터리 전압을 퍼센티지로 변환 (ADC 값 기반)
-    // 실제 배터리 전압 범위에 따라 조정 필요
     uint8_t battery_percent = 0;
-    if (Adc_State.VBat_ADC_Value > 700)
+    if (Adc_State.VBat_ADC_Value > 500)
     {                                                                                    // 3.0V 이상이면 배터리 상태 계산
       battery_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value - 500) / 2200 * 100); // 3.0V~4.2V 범위를 0~100%로 매핑
       if (battery_percent > 100)
@@ -395,7 +412,7 @@ void StartDisplayTask(void *argument)
       timer_status = TIMER_STATUS_RUNNING;
     }
 
-    // 타이머 시간 설정
+    // 타이머 시간 설정 (다운카운트 지원)
     uint8_t timer_minutes = 0;
     uint8_t timer_seconds = 0;
     
@@ -409,6 +426,12 @@ void StartDisplayTask(void *argument)
         // 실행 중이거나 쿨링 중일 때는 실제 카운트다운 값
         timer_minutes = (uint8_t)Button_State.minute_count;
         timer_seconds = (uint8_t)Button_State.second_count;
+        
+        // 쿨링 중일 때는 쿨링 시간을 초로 표시
+        if (Button_State.is_start_to_cooling) {
+          timer_minutes = Button_State.cooling_second / 60;
+          timer_seconds = Button_State.cooling_second % 60;
+        }
       } else {
         // 정지 상태에서는 설정된 초기값 표시
         timer_minutes = Button_State.Timer_Value;
@@ -433,17 +456,16 @@ void StartDisplayTask(void *argument)
     }
 
     // UI 상태 구조체 업데이트
-    UI_Status_t current_status = {
-        .battery_percent = battery_percent,
-        .timer_minutes = timer_minutes,
-        .timer_seconds = timer_seconds,
-        .timer_status = timer_status,
-        .l1_connected = l1_connected,
-        .l2_connected = l2_connected,
-        .cooling_seconds = (uint8_t)Button_State.cooling_second};
+    current_status.battery_percent = battery_percent;
+    current_status.timer_minutes = timer_minutes;
+    current_status.timer_seconds = timer_seconds;
+    current_status.timer_status = timer_status;
+    current_status.l1_connected = l1_connected;
+    current_status.l2_connected = l2_connected;
+    current_status.cooling_seconds = (uint8_t)Button_State.cooling_second;
 
-    // 전체 화면 그리기 (새로운 레이아웃)
-    UI_DrawFullScreen(&current_status);
+    // 최적화된 화면 그리기
+    UI_DrawFullScreenOptimized(&current_status);
 
     // 배터리 부족 경고 (10% 이하일 때)
     if (battery_percent <= 10 && battery_percent > 0)
@@ -465,9 +487,8 @@ void StartDisplayTask(void *argument)
       UI_ShowTimerComplete();
     }
 
-
-    // 20fps: 50ms 주기로 업데이트
-    vTaskDelayUntil(&lastWakeTime, 50 * portTICK_PERIOD_MS);
+    // UI_UPDATE_INTERVAL_MS 주기로 업데이트
+    vTaskDelayUntil(&lastWakeTime, UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartDisplayTask */
 }
@@ -551,9 +572,9 @@ void StartButtonTask(void *argument)
 
             if (Button_State.is_Start_Timer)
             {
-              osTimerStart(MainTimerHandle, 1001);
+              osTimerStart(MainTimerHandle, 1000);  // 1000ms = 1초 주기
               Button_State.minute_count = Button_State.Timer_Value;
-              Button_State.second_count = 0;
+              Button_State.second_count = 59;  // 59초부터 시작 (첫 번째 콜백에서 59->58로)
             }
             else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
             {
@@ -639,15 +660,22 @@ void Callback01(void *argument)
   UNUSED(argument);
   if (Button_State.is_Start_Timer)
   {
-    Button_State.second_count--;
-    if (Button_State.second_count < 0)
+    // 초 카운트다운
+    if (Button_State.second_count > 0)
     {
-      Button_State.minute_count--;
-      Button_State.second_count = 59;
-
-      // 다운카운트: 설정된 시간에 도달하면 타이머 정지
-      if (Button_State.minute_count < 0)
+      Button_State.second_count--;
+    }
+    else
+    {
+      // 초가 0이 되면 분 감소하고 초를 59로 리셋
+      if (Button_State.minute_count > 0)
       {
+        Button_State.minute_count--;
+        Button_State.second_count = 59;
+      }
+      else
+      {
+        // 타이머 완료: 0분 0초 도달
         Button_State.is_Start_Timer = false;
         Button_State.is_start_to_cooling = true;
 

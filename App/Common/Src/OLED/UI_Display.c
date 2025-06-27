@@ -103,7 +103,7 @@ void UI_DrawDigit(uint16_t x, uint16_t y, uint8_t digit, uint16_t color)
 /**
  * @brief 큰 숫자 그리기 (5x7 폰트를 2배 확대)
  */
-void UI_DrawDigitLarge(uint16_t x, uint16_t y, uint8_t digit, uint16_t color)
+void UI_DrawDigitLarge(uint16_t x, uint16_t y, uint8_t digit, uint16_t color, float font_scale)
 {
     if (digit > 9)
         return;
@@ -116,13 +116,26 @@ void UI_DrawDigitLarge(uint16_t x, uint16_t y, uint8_t digit, uint16_t color)
             if (byte_data & (0x20 >> col))
             {
                 // 2x2 픽셀로 확대
-                Paint_SetPixel(x + col * 2, y + row * 2, color);
-                Paint_SetPixel(x + col * 2 + 1, y + row * 2, color);
-                Paint_SetPixel(x + col * 2, y + row * 2 + 1, color);
-                Paint_SetPixel(x + col * 2 + 1, y + row * 2 + 1, color);
+                Paint_SetPixel(x + col * font_scale, y + row * font_scale, color);
+                Paint_SetPixel(x + col * font_scale + 1, y + row * font_scale, color);
+                Paint_SetPixel(x + col * font_scale, y + row * font_scale + 1, color);
+                Paint_SetPixel(x + col * font_scale + 1, y + row * font_scale + 1, color);
             }
         }
     }
+}
+
+/**
+ * @brief 큰 숫자 2자리 그리기 (이전 방식으로 되돌림)
+ */
+void UI_DrawTwoDigitsLarge(uint16_t x, uint16_t y, uint8_t value)
+{
+    // 10의 자리 숫자 그리기
+    uint8_t tens = value / 10;
+    uint8_t ones = value % 10;
+
+    UI_DrawDigitLarge(x, y, tens, COLOR_WHITE, 2);
+    UI_DrawDigitLarge(x + 12, y, ones, COLOR_WHITE, 2); // 12픽셀 간격 (2배 확대된 6픽셀 폰트)
 }
 
 /**
@@ -130,8 +143,8 @@ void UI_DrawDigitLarge(uint16_t x, uint16_t y, uint8_t digit, uint16_t color)
  */
 void UI_DrawNumber(uint16_t x, uint16_t y, uint16_t number, uint16_t color)
 {
-    char num_str[4];
-    sprintf(num_str, "%d", number);
+    char num_str[5];
+    sprintf(num_str, "%d", (uint8_t)number);
 
     uint16_t offset_x = 0;
     for (int i = 0; num_str[i] != '\0'; i++)
@@ -236,53 +249,44 @@ void UI_DrawCircle(uint16_t x, uint16_t y, uint16_t radius, uint16_t color, uint
 }
 
 /**
- * @brief 원형 프로그래스바 그리기 (개선된 버전 - 빈 공간 완전 제거)
+ * @brief 원형 프로그래스바 그리기 (최적화된 버전)
  * @param center_x: 중심 X 좌표
  * @param center_y: 중심 Y 좌표
  * @param radius: 반지름
  * @param progress: 진행률 (0-100)
  * @param color: 색상
+ * @param should_update: 업데이트 여부 (성능 최적화)
  */
-void UI_DrawCircularProgress(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color)
+void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color, uint8_t should_update)
 {
-    // 외곽 원 그리기 (더 두꺼운 테두리 - 빈 픽셀 완전 제거)
-    // for (int r = 0; r < 3; r++)
-    // {
-    //     // 원 둘레를 조밀하게 그리기
-    //     for (int angle = 0; angle < 360; angle++)
-    //     {
-    //         float radian = angle * M_PI / 180.0f;
-    //         int x = center_x + (radius - r) * cos(radian);
-    //         int y = center_y + (radius - r) * sin(radian);
+    if (!should_update)
+    {
+        return; // 업데이트가 필요하지 않으면 스킵
+    }
 
-    //         // 주변 픽셀도 채워서 빈 공간 완전 제거
-    //         Paint_SetPixel(x, y, color);
-    //         Paint_SetPixel(x + 1, y, color);
-    //         Paint_SetPixel(x, y + 1, color);
-    //         Paint_SetPixel(x - 1, y, color);
-    //         Paint_SetPixel(x, y - 1, color);
-    //     }
-    // }
+    // 기존 프로그래스바 영역 클리어
+    Paint_DrawCircle(center_x, center_y, radius, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-    Paint_DrawCircle(center_x, center_y, radius-2, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-    Paint_DrawCircle(center_x, center_y, radius-7, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    // 외곽 원 2개 그리기 (빠른 렌더링)
+    Paint_DrawCircle(center_x, center_y, radius - 2, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    Paint_DrawCircle(center_x, center_y, radius - 7, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
 
-    // 진행률에 따른 호 그리기 (시계 12시 방향부터 시작)
+    // 진행률에 따른 호 그리기 (간소화된 버전)
     float angle_per_percent = 360.0f / 100.0f;
     float target_angle = progress * angle_per_percent;
 
-    // 매우 조밀하게 그리기 (0.25도 간격)
-    for (float angle = 0; angle < target_angle; angle += 0.25f)
+    // 성능을 위해 간격을 크게 설정 (1도 간격)
+    for (float angle = 0; angle < target_angle; angle += 1.0f)
     {
         float radian = (angle - 90) * M_PI / 180.0f; // -90도로 12시 방향 시작
 
-        // 더 두꺼운 프로그래스바 (두께 8픽셀) - 매우 조밀하게
+        // 프로그래스바 두께 4픽셀
         for (int thickness = 0; thickness < 4; thickness++)
         {
             int x = center_x + (radius - 3 - thickness) * cos(radian);
             int y = center_y + (radius - 3 - thickness) * sin(radian);
 
-            // 9방향 픽셀 모두 채우기
+            // 3x3 픽셀로 채우기 (성능 향상)
             for (int dx = -1; dx <= 1; dx++)
             {
                 for (int dy = -1; dy <= 1; dy++)
@@ -317,35 +321,47 @@ void UI_DrawBatteryArea(uint8_t percent)
 void UI_DrawBatteryProgress(uint8_t percent)
 {
     // 원형 프로그래스바 그리기 (더 큰 크기)
-    UI_DrawCircularProgress(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, percent, COLOR_WHITE);
+    UI_DrawCircularProgressOptimized(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, percent, COLOR_WHITE, 1);
 }
 
 /**
- * @brief 배터리 퍼센티지 숫자 표시 (더 큰 크기)
+ * @brief 배터리 퍼센티지 숫자 표시 (정확한 영역 클리어)
  * @param percent: 배터리 퍼센티지 (0-100)
  */
 void UI_DrawBatteryPercentage(uint8_t percent)
 {
-    uint16_t base_x = BATTERY_PERCENT_X - 18; // 더 큰 폰트를 위한 중앙 정렬 조정
-    uint16_t base_y = BATTERY_PERCENT_Y - 7;  // 더 큰 폰트를 위한 중앙 정렬 조정
+    uint16_t base_x = BATTERY_PERCENT_X - 20; // 중앙 정렬 조정
+    uint16_t base_y = BATTERY_PERCENT_Y - 9;  // 중앙 정렬 조정
 
-    // 100% 처리 (3자리 숫자)
+    // 100% 처리 (3자리 숫자) - 프로그래스바 침범 방지를 위해 위치 조정
     if (percent == 100)
     {
-        UI_DrawDigitLarge(base_x, base_y, 1, COLOR_WHITE);
-        UI_DrawDigitLarge(base_x + 11, base_y, 0, COLOR_WHITE);
-        UI_DrawDigitLarge(base_x + 24, base_y, 0, COLOR_WHITE);
+        // 3자리 숫자를 더 안쪽으로 배치 (프로그래스바 침범 방지)
+        uint16_t safe_x = base_x + 4; // 더 안쪽으로 이동
+        Paint_DrawRectangle(safe_x - 2, base_y - 2, safe_x + 34, base_y + 16, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+        UI_DrawDigitLarge(safe_x, base_y, 1, COLOR_WHITE, 1.5);
+        UI_DrawDigitLarge(safe_x + 11, base_y, 0, COLOR_WHITE, 1.5); // 간격 줄임
+        UI_DrawDigitLarge(safe_x + 22, base_y, 0, COLOR_WHITE, 1.5); // 간격 줄임
     }
     // 10-99% 처리 (2자리 숫자)
     else if (percent >= 10)
     {
-        UI_DrawDigitLarge(base_x + 5, base_y, percent / 10, COLOR_WHITE);
-        UI_DrawDigitLarge(base_x + 19, base_y, percent % 10, COLOR_WHITE);
+        // 2자리 숫자 영역만 클리어 (24픽셀 폭: 12*2, 중앙 정렬)
+        uint16_t clear_x = base_x + 6;
+        Paint_DrawRectangle(clear_x - 2, base_y - 2, clear_x + 26, base_y + 16, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+        UI_DrawDigitLarge(base_x + 6, base_y, percent / 10, COLOR_WHITE, 2);
+        UI_DrawDigitLarge(base_x + 20, base_y, percent % 10, COLOR_WHITE, 2);
     }
     // 0-9% 처리 (1자리 숫자)
     else
     {
-        UI_DrawDigitLarge(base_x + 12, base_y, percent, COLOR_WHITE);
+        // 1자리 숫자 영역만 클리어 (12픽셀 폭, 중앙 정렬)
+        uint16_t clear_x = base_x + 12;
+        Paint_DrawRectangle(clear_x - 2, base_y - 2, clear_x + 14, base_y + 16, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+        UI_DrawDigitLarge(base_x + 12, base_y, percent, COLOR_WHITE, 2);
     }
 }
 
@@ -355,12 +371,9 @@ void UI_DrawBatteryPercentage(uint8_t percent)
  */
 void UI_DrawInfoArea(UI_Status_t *status)
 {
-    static uint32_t blink_counter = 0;
-    blink_counter++;
-
     // 1구역: 타이머 시간 표시 (분:초)
     UI_DrawTimerTime(status->timer_minutes, status->timer_seconds,
-                     (status->timer_status == TIMER_STATUS_SETTING), blink_counter);
+                     (status->timer_status == TIMER_STATUS_SETTING), status->blink_counter);
 
     // 2-3구역: 타이머 상태 아이콘 표시 (19x19 큰 아이콘, 중앙 정렬)
     UI_DrawTimerStatus(status->timer_status);
@@ -370,7 +383,7 @@ void UI_DrawInfoArea(UI_Status_t *status)
 }
 
 /**
- * @brief 타이머 시간 표시 (1구역 - 분:초)
+ * @brief 타이머 시간 표시 (1구역 - 분:초, 항상 2자리)
  * @param minutes: 분
  * @param seconds: 초
  * @param should_blink: 깜빡임 여부
@@ -380,59 +393,55 @@ void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, ui
 {
     uint16_t x_pos = INFO_TIMER_X;
     uint16_t y_pos = INFO_TIMER_Y;
-
-    // 깜빡임 효과: 30프레임마다 토글 (약 1.5초 주기)
+    
+    // 깜빡임 효과: 20프레임마다 토글 (50ms * 20 = 1초 주기)
     uint8_t show_text = 1;
-    if (should_blink && ((blink_counter / 30) % 2 == 0))
+    if (should_blink && ((blink_counter / 20) % 2 == 0))
     {
         show_text = 0; // 숨김
     }
-
+    
     if (show_text)
     {
-        // 분 표시 (1자리, 공간 절약)
-        UI_DrawDigit(x_pos, y_pos, minutes, COLOR_WHITE);
-
-        // 콜론 그리기
-        UI_DrawColon(x_pos + 6, y_pos, COLOR_WHITE);
-
-        // 초 표시 (2자리)
-        if (seconds >= 10)
-        {
-            UI_DrawDigit(x_pos + 10, y_pos, seconds / 10, COLOR_WHITE);
-            UI_DrawDigit(x_pos + 16, y_pos, seconds % 10, COLOR_WHITE);
-        }
-        else
-        {
-            UI_DrawDigit(x_pos + 10, y_pos, 0, COLOR_WHITE);
-            UI_DrawDigit(x_pos + 16, y_pos, seconds, COLOR_WHITE);
-        }
+        char time_str[8]; // "00:00" + null terminator
+        sprintf(time_str, "%02d:%02d", minutes, seconds);
+        Paint_DrawString_EN(x_pos, y_pos, time_str, &Font12, COLOR_WHITE, COLOR_BLACK);
+    }
+    else
+    {
+        // 깜빡임을 위해 해당 영역 클리어
+        Paint_DrawRectangle(x_pos, y_pos, x_pos + 35, y_pos + 12, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
     }
 }
 
 /**
- * @brief 타이머 상태 아이콘 표시 (2-3구역 - 19x19 큰 아이콘, 중앙 정렬)
+ * @brief 타이머 상태 아이콘 표시 (2-3구역 - 19x19 큰 아이콘, 겹침 방지)
  * @param status: 타이머 상태
  */
 void UI_DrawTimerStatus(Timer_Status_t status)
 {
-    // 우측 영역 중앙 정렬 계산 (32픽셀 폭에서 19픽셀 아이콘 중앙)
-    uint16_t center_x = INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2);      // 약 106
-    uint16_t center_y = INFO_STATUS_Y + (INFO_STATUS_HEIGHT / 2) - (19 / 2); // 약 25
+    // 19x19 아이콘을 우측 영역에 중앙 정렬
+    uint16_t icon_x = INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2); // 우측 영역 중앙
+    uint16_t icon_y = INFO_STATUS_Y;
+
+    // 상태 아이콘 영역을 더 넓게 클리어 (겹침 완전 방지)
+    Paint_DrawRectangle(icon_x - 3, icon_y - 3,
+                        icon_x + 22, icon_y + 22,
+                        COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
     switch (status)
     {
     case TIMER_STATUS_STANDBY:
-        UI_DrawIcon19x19(center_x, center_y, standby_icon_19x19, COLOR_WHITE);
+        UI_DrawIcon19x19(icon_x, icon_y, standby_icon_19x19, COLOR_WHITE);
         break;
     case TIMER_STATUS_RUNNING:
-        UI_DrawIcon19x19(center_x, center_y, running_icon_19x19, COLOR_WHITE);
+        UI_DrawIcon19x19(icon_x - 3, icon_y, running_icon_19x19, COLOR_WHITE);
         break;
     case TIMER_STATUS_SETTING:
-        UI_DrawIcon19x19(center_x, center_y, setting_icon_19x19, COLOR_WHITE);
+        UI_DrawIcon19x19(icon_x, icon_y, setting_icon_19x19, COLOR_WHITE);
         break;
     case TIMER_STATUS_COOLING:
-        UI_DrawIcon19x19(center_x, center_y, cooling_icon_19x19, COLOR_WHITE);
+        UI_DrawIcon19x19(icon_x, icon_y, cooling_icon_19x19, COLOR_WHITE);
         break;
     }
 }
@@ -487,14 +496,85 @@ void UI_DrawFullScreen(UI_Status_t *status)
     // 화면 클리어
     UI_Clear();
 
-    // 좌측 영역: 배터리 (96x64)
+    // 좌측 영역: 배터리 (81x64)
     UI_DrawBatteryArea(status->battery_percent);
 
     // 우측 영역: 정보 (32x64)
     UI_DrawInfoArea(status);
 
     // 화면 테두리(삭제 금지)
-    Paint_DrawRectangle(1, 1, 128, 64, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    Paint_DrawRectangle(81, 1, 128, 64, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+
+    // 화면 업데이트
+    OLED_1in3_C_Display(BlackImage);
+}
+
+/**
+ * @brief 최적화된 전체 화면 그리기 (성능 향상)
+ * @param status: UI 상태 구조체
+ */
+void UI_DrawFullScreenOptimized(UI_Status_t *status)
+{
+    static uint8_t prev_battery_percent = 255; // 이전 배터리 값
+    static Timer_Status_t prev_timer_status = TIMER_STATUS_STANDBY;
+    static uint8_t prev_timer_minutes = 255;
+    static uint8_t prev_timer_seconds = 255;
+    static LED_Connection_t prev_l1_connected = LED_DISCONNECTED;
+    static LED_Connection_t prev_l2_connected = LED_DISCONNECTED;
+
+    // 전체 업데이트가 필요한 경우
+    if (status->force_full_update)
+    {
+        UI_DrawFullScreen(status);
+        status->force_full_update = 0;
+        prev_battery_percent = status->battery_percent;
+        prev_timer_status = status->timer_status;
+        prev_timer_minutes = status->timer_minutes;
+        prev_timer_seconds = status->timer_seconds;
+        prev_l1_connected = status->l1_connected;
+        prev_l2_connected = status->l2_connected;
+        return;
+    }
+
+    // 배터리 프로그래스바 업데이트 (주기적)
+    uint8_t should_update_progress = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS / UI_UPDATE_INTERVAL_MS)) == 0;
+    if (should_update_progress || prev_battery_percent != status->battery_percent)
+    {
+        UI_DrawBatteryProgress(status->battery_percent);
+        // 프로그래스바 그린 후 즉시 숫자 표시 (덮어쓰기 방지)
+        UI_DrawBatteryPercentage(status->battery_percent);
+        prev_battery_percent = status->battery_percent;
+    }
+
+    // 타이머 시간 업데이트 (값이 변경되거나 깜빡임이 필요한 경우)
+    if (prev_timer_minutes != status->timer_minutes || 
+        prev_timer_seconds != status->timer_seconds ||
+        status->timer_status == TIMER_STATUS_SETTING)
+    {
+        UI_DrawTimerTime(status->timer_minutes, status->timer_seconds, 
+                        (status->timer_status == TIMER_STATUS_SETTING), status->blink_counter);
+        
+        // 설정 모드가 아닌 경우에만 이전 값 업데이트 (깜빡임을 위해)
+        if (status->timer_status != TIMER_STATUS_SETTING) {
+            prev_timer_minutes = status->timer_minutes;
+            prev_timer_seconds = status->timer_seconds;
+        }
+    }
+
+    // 상태 아이콘 업데이트 (상태가 변경된 경우, 겹침 방지를 위해 항상 클리어 후 재그리기)
+    if (prev_timer_status != status->timer_status)
+    {
+        UI_DrawTimerStatus(status->timer_status);
+        prev_timer_status = status->timer_status;
+    }
+
+    // LED 상태 업데이트 (변경된 경우만)
+    if (prev_l1_connected != status->l1_connected || prev_l2_connected != status->l2_connected)
+    {
+        UI_DrawLEDStatus(status->l1_connected, status->l2_connected);
+        prev_l1_connected = status->l1_connected;
+        prev_l2_connected = status->l2_connected;
+    }
 
     // 화면 업데이트
     OLED_1in3_C_Display(BlackImage);
