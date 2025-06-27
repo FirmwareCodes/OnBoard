@@ -81,7 +81,7 @@
 #ifndef __GUI_PAINT_H
 #define __GUI_PAINT_H
 
-#include "../Fonts/fonts.h"
+#include "../../Fonts/fonts.h"
 
 #define red		0xf800
 #define green	0x07e0

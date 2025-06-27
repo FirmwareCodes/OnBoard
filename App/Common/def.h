@@ -16,6 +16,7 @@
 #include "GUI_Paint.h"
 #include "ImageData.h"
 #include "OLED_1in3_c.h"
+#include "UI_Layout.h"
 
 #endif
 
