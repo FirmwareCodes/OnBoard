@@ -24,21 +24,16 @@ extern const unsigned char percent_5x7[7];
 extern const unsigned char colon_3x7[7];
 
 /**
- * @brief UI 초기화
+ * @brief UI 초기화 (메인에서 이미 초기화 완료된 상태에서 호출)
  */
 void UI_Init(void)
 {
-    OLED_1in3_C_Init();
-    
-    // Paint 시스템 초기화 (기존 DisplayTask 설정과 동일하게)
-    Paint_NewImage(BlackImage, OLED_1in3_C_WIDTH, OLED_1in3_C_HEIGHT, ROTATE_180, WHITE);
-    Paint_SelectImage(BlackImage);
-    Paint_SetRotate(ROTATE_180);
-    Paint_SetMirroring(MIRROR_NONE);
-    Paint_SetScale(2);
+    // 메인에서 이미 OLED와 Paint 초기화가 완료된 상태
+    // 추가적인 UI 관련 설정만 수행
     
     // 초기 화면 클리어
     Paint_Clear(BLACK);
+    OLED_1in3_C_Display(BlackImage);
 }
 
 /**
@@ -138,24 +133,23 @@ void UI_DrawColon(uint16_t x, uint16_t y, uint16_t color)
  */
 void UI_DrawCircularProgress(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color)
 {
-    // 외곽 원 그리기
+    // 외곽 원 그리기 (더 두꺼운 테두리)
     Paint_DrawCircle(center_x, center_y, radius, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    Paint_DrawCircle(center_x, center_y, radius-1, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
     
     // 진행률에 따른 호 그리기 (시계 12시 방향부터 시작)
     float angle_per_percent = 360.0f / 100.0f;
     float target_angle = progress * angle_per_percent;
     
-    for(int angle = 0; angle < (int)target_angle; angle += 2) {
+    for(int angle = 0; angle < (int)target_angle; angle += 1) {
         float radian = (angle - 90) * M_PI / 180.0f;  // -90도로 12시 방향 시작
-        int x = center_x + (radius - 1) * cos(radian);
-        int y = center_y + (radius - 1) * sin(radian);
         
-        // 두께를 위해 주변 픽셀도 그리기
-        Paint_SetPixel(x, y, color);
-        Paint_SetPixel(x + 1, y, color);
-        Paint_SetPixel(x, y + 1, color);
-        Paint_SetPixel(x - 1, y, color);
-        Paint_SetPixel(x, y - 1, color);
+        // 더 두꺼운 프로그래스바 (두께 5픽셀)
+        for(int thickness = 0; thickness < 5; thickness++) {
+            int x = center_x + (radius - 2 - thickness) * cos(radian);
+            int y = center_y + (radius - 2 - thickness) * sin(radian);
+            Paint_SetPixel(x, y, color);
+        }
     }
 }
 
@@ -219,32 +213,31 @@ void UI_DrawBatteryProgress(uint8_t percent)
 }
 
 /**
- * @brief 배터리 퍼센티지 숫자 표시
+ * @brief 배터리 퍼센티지 숫자 표시 (더 큰 크기)
  * @param percent: 배터리 퍼센티지 (0-100)
  */
 void UI_DrawBatteryPercentage(uint8_t percent)
 {
-    uint16_t x_offset = 0;
-    uint16_t base_x = BATTERY_PERCENT_X - 10; // 중앙 정렬을 위한 오프셋
-    uint16_t base_y = BATTERY_PERCENT_Y - 3;  // 중앙 정렬을 위한 오프셋
+    uint16_t base_x = BATTERY_PERCENT_X - 15; // 중앙 정렬을 위한 오프셋 (더 큰 폰트용)
+    uint16_t base_y = BATTERY_PERCENT_Y - 5;  // 중앙 정렬을 위한 오프셋
     
     // 100% 처리
     if(percent == 100) {
         UI_DrawDigit(base_x, base_y, 1, COLOR_WHITE);
-        UI_DrawDigit(base_x + 6, base_y, 0, COLOR_WHITE);
-        UI_DrawDigit(base_x + 12, base_y, 0, COLOR_WHITE);
-        UI_DrawPercent(base_x + 18, base_y, COLOR_WHITE);
+        UI_DrawDigit(base_x + 8, base_y, 0, COLOR_WHITE);
+        UI_DrawDigit(base_x + 16, base_y, 0, COLOR_WHITE);
+        UI_DrawPercent(base_x + 24, base_y, COLOR_WHITE);
     }
     // 10-99% 처리
     else if(percent >= 10) {
-        UI_DrawDigit(base_x + 3, base_y, percent / 10, COLOR_WHITE);
-        UI_DrawDigit(base_x + 9, base_y, percent % 10, COLOR_WHITE);
-        UI_DrawPercent(base_x + 15, base_y, COLOR_WHITE);
+        UI_DrawDigit(base_x + 4, base_y, percent / 10, COLOR_WHITE);
+        UI_DrawDigit(base_x + 12, base_y, percent % 10, COLOR_WHITE);
+        UI_DrawPercent(base_x + 20, base_y, COLOR_WHITE);
     }
     // 0-9% 처리
     else {
-        UI_DrawDigit(base_x + 6, base_y, percent, COLOR_WHITE);
-        UI_DrawPercent(base_x + 12, base_y, COLOR_WHITE);
+        UI_DrawDigit(base_x + 8, base_y, percent, COLOR_WHITE);
+        UI_DrawPercent(base_x + 16, base_y, COLOR_WHITE);
     }
 }
 

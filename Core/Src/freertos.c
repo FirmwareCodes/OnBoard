@@ -361,38 +361,20 @@ void StartDisplayTask(void *argument)
   TickType_t lastWakeTime;
   lastWakeTime = xTaskGetTickCount();
 
-  // 하드웨어 및 UI 시스템 초기화
+  // UI 시스템 초기화 (메인에서 기본 초기화가 완료된 후)
   UI_Init();
   
-  // 초기 화면 표시를 위한 딜레이
-  osDelay(100);
+  // 초기 화면 안정화를 위한 딜레이
+  osDelay(200);
 
   /* Infinite loop */
   for (;;)
   {
-    // 간단한 테스트용 화면 그리기
-    Paint_Clear(BLACK);
-    
-    // 테스트 텍스트 표시
-    Paint_DrawString_EN(10, 10, "TEST", &Font12, WHITE, BLACK);
-    Paint_DrawString_EN(10, 30, "OLED", &Font12, WHITE, BLACK);
-    
-    // 테스트 원 그리기
-    Paint_DrawCircle(64, 32, 10, WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-    
-    // 화면 업데이트
-    OLED_1in3_C_Display(BlackImage);
-    
-    // 1초 대기 (테스트용)
-    osDelay(1000);
-    
-    /* 
-    // 원래 UI 코드 (테스트 후 복원 예정)
     // 배터리 전압을 퍼센티지로 변환 (ADC 값 기반)
     // 실제 배터리 전압 범위에 따라 조정 필요
     uint8_t battery_percent = 0;
-    if (Adc_State.VBat_ADC_Value > 3000) { // 3.0V 이상이면 배터리 상태 계산
-      battery_percent = ((Adc_State.VBat_ADC_Value - 3000) * 100) / 1200; // 3.0V~4.2V 범위를 0~100%로 매핑
+    if (Adc_State.VBat_ADC_Value > 700) { // 3.0V 이상이면 배터리 상태 계산
+      battery_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value-700) / 2200 * 100); // 3.0V~4.2V 범위를 0~100%로 매핑
       if (battery_percent > 100) battery_percent = 100;
     }
     
@@ -449,7 +431,6 @@ void StartDisplayTask(void *argument)
 
     // 20fps: 50ms 주기로 업데이트
     vTaskDelayUntil(&lastWakeTime, 50 * portTICK_PERIOD_MS);
-    */
   }
   /* USER CODE END StartDisplayTask */
 }

@@ -70,6 +70,9 @@ extern const unsigned char battery_icon_8x8[];
 extern const unsigned char play_icon_8x8[];
 extern const unsigned char pause_icon_8x8[];
 
+// 조명 아이콘 비트맵 (8x8)
+extern const unsigned char light_icon_8x8[];
+
 // 기본 UI 함수 선언
 void UI_Init(void);
 void UI_Clear(void);
@@ -98,5 +101,8 @@ void UI_ShowLowBatteryWarning(void);
 void UI_ShowTimerComplete(void);
 void UI_FadeOut(void);
 void UI_UpdateLoop(void);
+
+// 새로운 함수 선언
+void UI_DrawTimerValueWithBlink(uint8_t minutes, uint8_t seconds, uint8_t should_blink, uint32_t blink_counter);
 
 #endif 

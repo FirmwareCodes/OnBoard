@@ -6,6 +6,7 @@
         "def.h": "c",
         "freertos.h": "c",
         "task.h": "c",
-        "oled_1in3_c.h": "c"
+        "oled_1in3_c.h": "c",
+        "ui_layout.h": "c"
     }
 }
