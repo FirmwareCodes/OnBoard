@@ -15,11 +15,13 @@
 
 // 전역 UI 상태 변수
 static UI_Status_t g_ui_status = {
-    .battery_percent = 85, // 초기 배터리 85%
-    .timer_hours = 2,      // 초기 타이머 2시간
-    .timer_minutes = 30,   // 초기 타이머 30분
-    .is_timer_running = 0, // 초기 타이머 정지 상태
-    .is_connected = 1      // 연결 상태
+    .battery_percent = 85,              // 초기 배터리 85%
+    .timer_minutes = 2,                 // 초기 타이머 2분
+    .timer_seconds = 30,                // 초기 타이머 30초
+    .timer_status = TIMER_STATUS_STANDBY, // 초기 대기 상태
+    .l1_connected = LED_CONNECTED,      // L1 연결됨
+    .l2_connected = LED_CONNECTED,      // L2 연결됨
+    .cooling_seconds = 0                // 쿨링 시간 없음
 };
 
 /**
@@ -51,18 +53,16 @@ void UI_UpdateBattery(uint8_t percent)
 
 /**
  * @brief 타이머 설정값 업데이트
- * @param hours: 시간 (0-23)
  * @param minutes: 분 (0-59)
+ * @param seconds: 초 (0-59)
  */
-void UI_UpdateTimerSetting(uint8_t hours, uint8_t minutes)
+void UI_UpdateTimerSetting(uint8_t minutes, uint8_t seconds)
 {
-    if (hours > 23)
-        hours = 23;
-    if (minutes > 59)
-        minutes = 59;
+    if (minutes > 59) minutes = 59;
+    if (seconds > 59) seconds = 59;
 
-    g_ui_status.timer_hours = hours;
     g_ui_status.timer_minutes = minutes;
+    g_ui_status.timer_seconds = seconds;
     UI_DrawFullScreen(&g_ui_status);
 }
 
@@ -71,7 +71,20 @@ void UI_UpdateTimerSetting(uint8_t hours, uint8_t minutes)
  */
 void UI_ToggleTimerStatus(void)
 {
-    g_ui_status.is_timer_running = !g_ui_status.is_timer_running;
+    switch(g_ui_status.timer_status) {
+        case TIMER_STATUS_STANDBY:
+            g_ui_status.timer_status = TIMER_STATUS_RUNNING;
+            break;
+        case TIMER_STATUS_RUNNING:
+            g_ui_status.timer_status = TIMER_STATUS_STANDBY;
+            break;
+        case TIMER_STATUS_SETTING:
+            g_ui_status.timer_status = TIMER_STATUS_STANDBY;
+            break;
+        case TIMER_STATUS_COOLING:
+            g_ui_status.timer_status = TIMER_STATUS_STANDBY;
+            break;
+    }
     UI_DrawFullScreen(&g_ui_status);
 }
 
@@ -82,51 +95,6 @@ void UI_ToggleTimerStatus(void)
 UI_Status_t *UI_GetCurrentStatus(void)
 {
     return &g_ui_status;
-}
-
-/**
- * @brief UI 데모 테스트 함수
- */
-void UI_DemoTest(void)
-{
-    // 시스템 초기화
-
-    // 배터리 레벨 변화 테스트
-    for (int i = 100; i >= 0; i -= 10)
-    {
-        UI_UpdateBattery(i);
-        osDelay(500);
-    }
-
-    // 배터리 레벨 복구
-    UI_UpdateBattery(75);
-    osDelay(1000);
-
-    // 타이머 상태 토글 테스트
-    for (int i = 0; i < 5; i++)
-    {
-        UI_ToggleTimerStatus();
-        osDelay(800);
-    }
-
-    // 타이머 설정값 변경 테스트
-    uint8_t timer_settings[][2] = {
-        {1, 15}, // 1시간 15분
-        {0, 30}, // 30분
-        {3, 45}, // 3시간 45분
-        {2, 0},  // 2시간
-        {0, 5}   // 5분
-    };
-
-    for (int i = 0; i < 5; i++)
-    {
-        UI_UpdateTimerSetting(timer_settings[i][0], timer_settings[i][1]);
-        osDelay(1500);
-    }
-
-    // 최종 상태로 복원
-    UI_UpdateTimerSetting(2, 30);
-    UI_UpdateBattery(85);
 }
 
 /**
@@ -146,7 +114,6 @@ void UI_ShowLowBatteryWarning(void)
         {
             UI_DrawFullScreen(&g_ui_status);
         }
-        osDelay(300);
     }
 }
 
@@ -169,11 +136,10 @@ void UI_ShowTimerComplete(void)
             // 원래 화면으로
             UI_DrawFullScreen(&g_ui_status);
         }
-        osDelay(200);
     }
 
     // 타이머 상태를 정지로 변경
-    g_ui_status.is_timer_running = 0;
+    g_ui_status.timer_status = TIMER_STATUS_STANDBY;
     UI_DrawFullScreen(&g_ui_status);
 }
 

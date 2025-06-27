@@ -363,7 +363,7 @@ void StartDisplayTask(void *argument)
 
   // UI 시스템 초기화 (메인에서 기본 초기화가 완료된 후)
   UI_Init();
-  
+
   // 초기 화면 안정화를 위한 딜레이
   osDelay(200);
 
@@ -373,61 +373,98 @@ void StartDisplayTask(void *argument)
     // 배터리 전압을 퍼센티지로 변환 (ADC 값 기반)
     // 실제 배터리 전압 범위에 따라 조정 필요
     uint8_t battery_percent = 0;
-    if (Adc_State.VBat_ADC_Value > 700) { // 3.0V 이상이면 배터리 상태 계산
-      battery_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value-700) / 2200 * 100); // 3.0V~4.2V 범위를 0~100%로 매핑
-      if (battery_percent > 100) battery_percent = 100;
+    if (Adc_State.VBat_ADC_Value > 700)
+    {                                                                                    // 3.0V 이상이면 배터리 상태 계산
+      battery_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value - 500) / 2200 * 100); // 3.0V~4.2V 범위를 0~100%로 매핑
+      if (battery_percent > 100)
+        battery_percent = 100;
     }
-    
-    // 타이머 상태 및 시간 가져오기
-    uint8_t timer_running = Button_State.is_Start_Timer ? 1 : 0;
-    uint8_t timer_hours = 0;
+
+    // 타이머 상태 결정
+    Timer_Status_t timer_status = TIMER_STATUS_STANDBY;
+    if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+    {
+      timer_status = TIMER_STATUS_SETTING;
+    }
+    else if (Button_State.is_start_to_cooling)
+    {
+      timer_status = TIMER_STATUS_COOLING;
+    }
+    else if (Button_State.is_Start_Timer)
+    {
+      timer_status = TIMER_STATUS_RUNNING;
+    }
+
+    // 타이머 시간 설정
     uint8_t timer_minutes = 0;
+    uint8_t timer_seconds = 0;
     
-    // 버튼 상태에 따른 표시 방식 결정
     if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET) {
-      // 타이머 설정 모드: 설정값 표시
-      timer_hours = Button_State.Timer_Value / 60;
-      timer_minutes = Button_State.Timer_Value % 60;
+      // 타이머 설정 모드: 설정값 표시 (분:초)
+      timer_minutes = Button_State.Timer_Value;
+      timer_seconds = 0;
     } else {
-      // 일반 모드: 현재 카운트다운 값 표시
-      if (Button_State.is_Start_Timer) {
-        timer_hours = (uint8_t)Button_State.minute_count / 60;
-        timer_minutes = (uint8_t)Button_State.minute_count % 60;
+      // 일반 모드: Callback01에서 사용되는 실제 카운트다운 값 표시
+      if (Button_State.is_Start_Timer || Button_State.is_start_to_cooling) {
+        // 실행 중이거나 쿨링 중일 때는 실제 카운트다운 값
+        timer_minutes = (uint8_t)Button_State.minute_count;
+        timer_seconds = (uint8_t)Button_State.second_count;
       } else {
         // 정지 상태에서는 설정된 초기값 표시
-        timer_hours = Button_State.Timer_Value / 60;
-        timer_minutes = Button_State.Timer_Value % 60;
+        timer_minutes = Button_State.Timer_Value;
+        timer_seconds = 0;
       }
     }
-    
+
+    // LED 연결 상태 판단 (ADC 값 기반)
+    LED_Connection_t l1_connected = LED_DISCONNECTED;
+    LED_Connection_t l2_connected = LED_DISCONNECTED;
+
+    // LED1 연결 상태 (ADC 값이 특정 범위에 있으면 연결됨)
+    if (Adc_State.LED1_State != LED_STATE_FLOATING)
+    {
+      l1_connected = LED_CONNECTED;
+    }
+
+    // LED2 연결 상태 (ADC 값이 특정 범위에 있으면 연결됨)
+    if (Adc_State.LED2_State != LED_STATE_FLOATING)
+    {
+      l2_connected = LED_CONNECTED;
+    }
+
     // UI 상태 구조체 업데이트
     UI_Status_t current_status = {
-      .battery_percent = battery_percent,
-      .timer_hours = timer_hours,
-      .timer_minutes = timer_minutes,
-      .is_timer_running = timer_running,
-      .is_connected = 1  // 연결 상태 (필요에 따라 수정)
-    };
-    
-    // 전체 화면 그리기
+        .battery_percent = battery_percent,
+        .timer_minutes = timer_minutes,
+        .timer_seconds = timer_seconds,
+        .timer_status = timer_status,
+        .l1_connected = l1_connected,
+        .l2_connected = l2_connected,
+        .cooling_seconds = (uint8_t)Button_State.cooling_second};
+
+    // 전체 화면 그리기 (새로운 레이아웃)
     UI_DrawFullScreen(&current_status);
-    
+
     // 배터리 부족 경고 (10% 이하일 때)
-    if (battery_percent <= 10 && battery_percent > 0) {
+    if (battery_percent <= 10 && battery_percent > 0)
+    {
       // 5초마다 한 번씩 경고 표시 (50ms * 100 = 5초)
       static uint32_t low_battery_counter = 0;
       low_battery_counter++;
-      if (low_battery_counter >= 100) {
+      if (low_battery_counter >= 100)
+      {
         UI_ShowLowBatteryWarning();
         low_battery_counter = 0;
       }
     }
-    
+
     // 타이머 완료 시 알림
-    if (Button_State.minute_count == 0 && Button_State.second_count == 0 && 
-        Button_State.is_Start_Timer && !Button_State.is_start_to_cooling) {
+    if (Button_State.minute_count == 0 && Button_State.second_count == 0 &&
+        Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
+    {
       UI_ShowTimerComplete();
     }
+
 
     // 20fps: 50ms 주기로 업데이트
     vTaskDelayUntil(&lastWakeTime, 50 * portTICK_PERIOD_MS);
