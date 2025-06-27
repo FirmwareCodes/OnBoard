@@ -46,6 +46,11 @@
 #define BATTERY_PERCENT_X BATTERY_CENTER_X
 #define BATTERY_PERCENT_Y BATTERY_CENTER_Y + 2
 
+// 타이머 실행 표시기 위치 (좌측 상단)
+#define TIMER_INDICATOR_X 8     // 좌측 상단
+#define TIMER_INDICATOR_Y 8     // 좌측 상단
+#define TIMER_INDICATOR_RADIUS 3 // 작은 원형 표시기
+
 // 우측 영역 - 정보 표시 (32x64)
 #define INFO_AREA_X 88
 #define INFO_AREA_Y 0
@@ -116,6 +121,7 @@ typedef struct
     uint32_t progress_update_counter; // 프로그래스바 업데이트 카운터
     uint32_t blink_counter;           // 깜빡임 카운터
     uint8_t force_full_update;        // 전체 화면 강제 업데이트 플래그
+    uint8_t timer_indicator_blink;    // 타이머 실행 표시기 깜빡임 상태
 } UI_Status_t;
 
 // 타이머 아이콘 비트맵 (8x8)
@@ -165,6 +171,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status); // 최적화된 업데이�
 void UI_DrawBatteryArea(uint8_t percent);
 void UI_DrawBatteryProgress(uint8_t percent);
 void UI_DrawBatteryPercentage(uint8_t percent);
+void UI_DrawTimerIndicator(uint8_t show); // 타이머 실행 표시기 그리기
 
 // 우측 영역 - 정보 표시 함수
 void UI_DrawInfoArea(UI_Status_t *status);

@@ -299,6 +299,26 @@ void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint
 }
 
 /**
+ * @brief 타이머 실행 표시기 그리기 (좌측 상단 원형)
+ * @param show: 표시 여부 (1: 표시, 0: 숨김)
+ */
+void UI_DrawTimerIndicator(uint8_t show)
+{
+    // 표시기 영역 클리어
+    Paint_DrawRectangle(TIMER_INDICATOR_X - TIMER_INDICATOR_RADIUS - 1,
+                        TIMER_INDICATOR_Y - TIMER_INDICATOR_RADIUS - 1,
+                        TIMER_INDICATOR_X + TIMER_INDICATOR_RADIUS + 1,
+                        TIMER_INDICATOR_Y + TIMER_INDICATOR_RADIUS + 1,
+                        COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    if (show)
+    {
+        // 채워진 원형 표시기 그리기
+        UI_DrawCircle(TIMER_INDICATOR_X, TIMER_INDICATOR_Y, TIMER_INDICATOR_RADIUS, COLOR_WHITE, 1);
+    }
+}
+
+/**
  * @brief 좌측 배터리 영역 그리기 (96x64)
  * @param percent: 배터리 퍼센티지 (0-100)
  */
@@ -393,14 +413,14 @@ void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, ui
 {
     uint16_t x_pos = INFO_TIMER_X;
     uint16_t y_pos = INFO_TIMER_Y;
-    
+
     // 깜빡임 효과: 20프레임마다 토글 (50ms * 20 = 1초 주기)
     uint8_t show_text = 1;
     if (should_blink && ((blink_counter / 20) % 2 == 0))
     {
         show_text = 0; // 숨김
     }
-    
+
     if (show_text)
     {
         char time_str[8]; // "00:00" + null terminator
@@ -453,6 +473,8 @@ void UI_DrawTimerStatus(Timer_Status_t status)
  */
 void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
 {
+    Paint_DrawRectangle(INFO_L1_X - INFO_L1_RADIUS, INFO_L1_Y - INFO_L1_RADIUS, INFO_L2_X + INFO_L2_RADIUS, INFO_L2_Y + INFO_L2_RADIUS, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
     // L1 상태 표시 (원형)
     if (l1_status == LED_CONNECTED)
     {
@@ -499,6 +521,9 @@ void UI_DrawFullScreen(UI_Status_t *status)
     // 좌측 영역: 배터리 (81x64)
     UI_DrawBatteryArea(status->battery_percent);
 
+    // 타이머 실행 표시기 (좌측 상단)
+    UI_DrawTimerIndicator(status->timer_indicator_blink);
+
     // 우측 영역: 정보 (32x64)
     UI_DrawInfoArea(status);
 
@@ -521,6 +546,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     static uint8_t prev_timer_seconds = 255;
     static LED_Connection_t prev_l1_connected = LED_DISCONNECTED;
     static LED_Connection_t prev_l2_connected = LED_DISCONNECTED;
+    static uint8_t prev_timer_indicator = 255; // 이전 타이머 표시기 상태
 
     // 전체 업데이트가 필요한 경우
     if (status->force_full_update)
@@ -533,6 +559,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         prev_timer_seconds = status->timer_seconds;
         prev_l1_connected = status->l1_connected;
         prev_l2_connected = status->l2_connected;
+        prev_timer_indicator = status->timer_indicator_blink;
         return;
     }
 
@@ -546,16 +573,24 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         prev_battery_percent = status->battery_percent;
     }
 
+    // 타이머 실행 표시기 업데이트 (상태가 변경된 경우)
+    if (prev_timer_indicator != status->timer_indicator_blink)
+    {
+        UI_DrawTimerIndicator(status->timer_indicator_blink);
+        prev_timer_indicator = status->timer_indicator_blink;
+    }
+
     // 타이머 시간 업데이트 (값이 변경되거나 깜빡임이 필요한 경우)
-    if (prev_timer_minutes != status->timer_minutes || 
+    if (prev_timer_minutes != status->timer_minutes ||
         prev_timer_seconds != status->timer_seconds ||
         status->timer_status == TIMER_STATUS_SETTING)
     {
-        UI_DrawTimerTime(status->timer_minutes, status->timer_seconds, 
-                        (status->timer_status == TIMER_STATUS_SETTING), status->blink_counter);
-        
+        UI_DrawTimerTime(status->timer_minutes, status->timer_seconds,
+                         (status->timer_status == TIMER_STATUS_SETTING), status->blink_counter);
+
         // 설정 모드가 아닌 경우에만 이전 값 업데이트 (깜빡임을 위해)
-        if (status->timer_status != TIMER_STATUS_SETTING) {
+        if (status->timer_status != TIMER_STATUS_SETTING)
+        {
             prev_timer_minutes = status->timer_minutes;
             prev_timer_seconds = status->timer_seconds;
         }

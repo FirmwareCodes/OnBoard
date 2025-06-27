@@ -39,6 +39,8 @@ extern "C"
 
   /* Exported types ------------------------------------------------------------*/
   /* USER CODE BEGIN ET */
+  #define VBAT_FILTER_SIZE 8  // VBat 이동평균 필터 크기
+  
   // LED PWM 제어를 위한 변수들
   typedef enum
   {
@@ -63,6 +65,12 @@ extern "C"
     LED_State_t LED2_State;    // LED2 상태
     uint32_t State_Start_Time; // 상태 시작 시간
     uint16_t Current_PWM_Duty; // 현재 PWM 듀티
+    
+    // VBat 필터링 관련 필드들
+    uint16_t VBat_Filtered;                    // 필터링된 VBat 값
+    uint16_t VBat_Buffer[VBAT_FILTER_SIZE];    // VBat 이동평균 버퍼
+    uint8_t VBat_Buffer_Index;                 // VBat 버퍼 인덱스
+    uint8_t VBat_Buffer_Full;                  // VBat 버퍼 채워짐 여부
   } Adc_t;
 
   // 버튼 제어를 위한 변수들

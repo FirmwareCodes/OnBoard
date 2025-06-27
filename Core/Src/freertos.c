@@ -100,6 +100,10 @@ Adc_t Adc_State = {
     .LED2_State = LED_STATE_FLOATING, // LED2 상태
     .State_Start_Time = 0,            // 상태 시작 시간
     .Current_PWM_Duty = 0,            // 현재 PWM 듀티
+    .VBat_Filtered = 0,               // 필터링된 VBat 값
+    .VBat_Buffer = {0},               // VBat 이동평균 버퍼
+    .VBat_Buffer_Index = 0,           // VBat 버퍼 인덱스
+    .VBat_Buffer_Full = 0,            // VBat 버퍼 채워짐 여부
 };
 
 Button_t Button_State = {
@@ -252,6 +256,10 @@ void StartAdcTask(void *argument)
   uint16_t target_duty = 0;
   uint8_t last_button_state = 0;
 
+  // VBat 필터링 관련 변수들
+  uint32_t vbat_sum = 0;
+  uint8_t vbat_samples = 0;
+
   // PWM 시작
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
 
@@ -279,18 +287,74 @@ void StartAdcTask(void *argument)
     Adc_State.LED2_ADC_Value = HAL_ADC_GetValue(&hadc2);
     HAL_ADC_Stop(&hadc2);
 
-    // VBat ADC 읽기
+    // VBat ADC 읽기 (여러 번 샘플링하여 평균화)
     sConfig1.Channel = ADC_CHANNEL_16;
     sConfig1.Rank = ADC_REGULAR_RANK_1;
-    sConfig1.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
+    sConfig1.SamplingTime = ADC_SAMPLETIME_247CYCLES_5; // 더 긴 샘플링 시간으로 안정성 향상
     sConfig1.SingleDiff = ADC_SINGLE_ENDED;
     sConfig1.OffsetNumber = ADC_OFFSET_NONE;
     sConfig1.Offset = 0;
     HAL_ADC_ConfigChannel(&hadc1, &sConfig1);
-    HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 1000);
-    Adc_State.VBat_ADC_Value = HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_Stop(&hadc1);
+
+    // VBat 5회 연속 샘플링하여 평균값 계산
+    vbat_sum = 0;
+    vbat_samples = 5;
+    for (uint8_t i = 0; i < vbat_samples; i++)
+    {
+      HAL_ADC_Start(&hadc1);
+      HAL_ADC_PollForConversion(&hadc1, 1000);
+      vbat_sum += HAL_ADC_GetValue(&hadc1);
+      HAL_ADC_Stop(&hadc1);
+      osDelay(2); // 2ms 간격으로 샘플링
+    }
+
+    // 평균값 계산
+    uint16_t vbat_current = vbat_sum / vbat_samples;
+
+    // 이동평균 필터 적용 (8개 샘플)
+    Adc_State.VBat_Buffer[Adc_State.VBat_Buffer_Index] = vbat_current;
+    Adc_State.VBat_Buffer_Index = (Adc_State.VBat_Buffer_Index + 1) % VBAT_FILTER_SIZE;
+
+    if (!Adc_State.VBat_Buffer_Full && Adc_State.VBat_Buffer_Index == 0)
+    {
+      Adc_State.VBat_Buffer_Full = 1; // 버퍼가 한 번 다 채워짐
+    }
+
+    // 이동평균 계산
+    uint32_t filtered_sum = 0;
+    uint8_t samples_count = Adc_State.VBat_Buffer_Full ? VBAT_FILTER_SIZE : (Adc_State.VBat_Buffer_Index + 1);
+
+    for (uint8_t i = 0; i < samples_count; i++)
+    {
+      filtered_sum += Adc_State.VBat_Buffer[i];
+    }
+
+    uint16_t filtered_value = filtered_sum / samples_count;
+
+    // 급격한 변화 방지 (임계값 기반 필터링)
+    if (Adc_State.VBat_Filtered == 0)
+    {
+      // 첫 번째 값은 그대로 사용
+      Adc_State.VBat_Filtered = filtered_value;
+    }
+    else
+    {
+      // 이전 값과 차이가 30 이상이면 점진적으로 변경 (노이즈 제거)
+      int16_t diff = filtered_value - Adc_State.VBat_Filtered;
+      if (abs(diff) > 30)
+      {
+        // 점진적 변경 (차이의 1/4씩 적용)
+        Adc_State.VBat_Filtered += diff / 4;
+      }
+      else
+      {
+        // 작은 변화는 그대로 적용
+        Adc_State.VBat_Filtered = filtered_value;
+      }
+    }
+
+    // 최종 필터링된 값을 VBat_ADC_Value에 저장
+    Adc_State.VBat_ADC_Value = Adc_State.VBat_Filtered;
 
     // 간단한 LED 상태 판단
     Adc_State.LED1_State = (Adc_State.LED1_ADC_Value == 0) ? LED_STATE_LOW : (Adc_State.LED1_ADC_Value >= 3000) ? LED_STATE_HIGH
@@ -378,7 +442,8 @@ void StartDisplayTask(void *argument)
       .cooling_seconds = 0,
       .progress_update_counter = 0,
       .blink_counter = 0,
-      .force_full_update = 1  // 첫 번째는 전체 업데이트
+      .force_full_update = 1, // 첫 번째는 전체 업데이트
+      .timer_indicator_blink = 0 // 타이머 표시기 초기값
   };
 
   /* Infinite loop */
@@ -390,12 +455,39 @@ void StartDisplayTask(void *argument)
     
     // 배터리 전압을 퍼센티지로 변환 (ADC 값 기반)
     uint8_t battery_percent = 0;
+    static uint8_t prev_battery_display = 255; // 이전 배터리 표시값 (필터링용)
+
     if (Adc_State.VBat_ADC_Value > 500)
-    {                                                                                    // 3.0V 이상이면 배터리 상태 계산
-      battery_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value - 500) / 2200 * 100); // 3.0V~4.2V 범위를 0~100%로 매핑
-      if (battery_percent > 100)
-        battery_percent = 100;
+    {                                                                                     // 3.0V 이상이면 배터리 상태 계산
+      float battery_float = ((float)(Adc_State.VBat_ADC_Value - 500) / 2200.0f * 100.0f); // 3.0V~4.2V 범위를 0~100%로 매핑
+      battery_percent = (uint8_t)(battery_float + 0.5f);                                  // 반올림 처리
     }
+
+    if (battery_percent > 100 || Adc_State.VBat_ADC_Value > 2650)
+    {
+      battery_percent = 100;
+      prev_battery_display = 100;
+    }
+    // 배터리 표시 안정화 (2% 이상 차이가 날 때만 업데이트)
+    else if (prev_battery_display == 255) // 첫 번째 값
+    {
+      prev_battery_display = battery_percent;
+    }
+    else if (abs((int)battery_percent - (int)prev_battery_display) >= 2)
+    {
+      // 2% 이상 차이가 나면 점진적으로 변경
+      if (battery_percent > prev_battery_display)
+      {
+        prev_battery_display += 1;
+      }
+      else if (battery_percent < prev_battery_display)
+      {
+        prev_battery_display -= 1;
+      }
+    }
+
+    // 최종 표시값 사용
+    battery_percent = prev_battery_display;
 
     // 타이머 상태 결정
     Timer_Status_t timer_status = TIMER_STATUS_STANDBY;
@@ -411,28 +503,47 @@ void StartDisplayTask(void *argument)
     {
       timer_status = TIMER_STATUS_RUNNING;
     }
+    
+    // 타이머 실행 표시기 제어 (0.5초마다 토글)
+    if (timer_status == TIMER_STATUS_RUNNING)
+    {
+      // 타이머 실행 중: 0.5초마다 토글 (50ms * 10 = 500ms)
+      current_status.timer_indicator_blink = (current_status.blink_counter / 10) % 2;
+    }
+    else
+    {
+      // 타이머 정지: 표시기 숨김
+      current_status.timer_indicator_blink = 0;
+    }
 
     // 타이머 시간 설정 (다운카운트 지원)
     uint8_t timer_minutes = 0;
     uint8_t timer_seconds = 0;
-    
-    if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET) {
+
+    if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+    {
       // 타이머 설정 모드: 설정값 표시 (분:초)
       timer_minutes = Button_State.Timer_Value;
       timer_seconds = 0;
-    } else {
+    }
+    else
+    {
       // 일반 모드: Callback01에서 사용되는 실제 카운트다운 값 표시
-      if (Button_State.is_Start_Timer || Button_State.is_start_to_cooling) {
+      if (Button_State.is_Start_Timer || Button_State.is_start_to_cooling)
+      {
         // 실행 중이거나 쿨링 중일 때는 실제 카운트다운 값
         timer_minutes = (uint8_t)Button_State.minute_count;
         timer_seconds = (uint8_t)Button_State.second_count;
-        
+
         // 쿨링 중일 때는 쿨링 시간을 초로 표시
-        if (Button_State.is_start_to_cooling) {
+        if (Button_State.is_start_to_cooling)
+        {
           timer_minutes = Button_State.cooling_second / 60;
           timer_seconds = Button_State.cooling_second % 60;
         }
-      } else {
+      }
+      else
+      {
         // 정지 상태에서는 설정된 초기값 표시
         timer_minutes = Button_State.Timer_Value;
         timer_seconds = 0;
@@ -565,9 +676,9 @@ void StartButtonTask(void *argument)
 
             if (Button_State.is_Start_Timer)
             {
-              osTimerStart(MainTimerHandle, 1000);  // 1000ms = 1초 주기
+              osTimerStart(MainTimerHandle, 1000); // 1000ms = 1초 주기
               Button_State.minute_count = Button_State.Timer_Value;
-              Button_State.second_count = 59;  // 59초부터 시작 (첫 번째 콜백에서 59->58로)
+              Button_State.second_count = 0; // 59초부터 시작 (첫 번째 콜백에서 59->58로)
             }
             else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
             {
