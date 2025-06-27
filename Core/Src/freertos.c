@@ -357,11 +357,11 @@ void StartAdcTask(void *argument)
     Adc_State.VBat_ADC_Value = Adc_State.VBat_Filtered;
 
     // 간단한 LED 상태 판단
-    Adc_State.LED1_State = (Adc_State.LED1_ADC_Value == 0) ? LED_STATE_LOW : (Adc_State.LED1_ADC_Value >= 3000) ? LED_STATE_HIGH
-                                                                                                                : LED_STATE_FLOATING;
+    Adc_State.LED1_State = (Adc_State.LED1_ADC_Value == 0) ? LED_STATE_LOW : (Adc_State.LED1_ADC_Value >= 800) ? LED_STATE_HIGH
+                                                                                                               : LED_STATE_FLOATING;
 
-    Adc_State.LED2_State = (Adc_State.LED2_ADC_Value == 0) ? LED_STATE_LOW : (Adc_State.LED2_ADC_Value >= 3000) ? LED_STATE_HIGH
-                                                                                                                : LED_STATE_FLOATING;
+    Adc_State.LED2_State = (Adc_State.LED2_ADC_Value == 0) ? LED_STATE_LOW : (Adc_State.LED2_ADC_Value >= 800) ? LED_STATE_HIGH
+                                                                                                               : LED_STATE_FLOATING;
 
     // 상태 변화 감지 및 타이머
     if (Adc_State.LED1_State != prev_LED1_State || Adc_State.LED2_State != prev_LED2_State)
@@ -404,7 +404,7 @@ void StartAdcTask(void *argument)
     }
 
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4,
-                          Button_State.is_Start_Timer ? Adc_State.Current_PWM_Duty : DUTY_0);
+                          Button_State.is_Start_Timer ? Adc_State.Current_PWM_Duty : 0);
 
     vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
   }
@@ -442,7 +442,7 @@ void StartDisplayTask(void *argument)
       .cooling_seconds = 0,
       .progress_update_counter = 0,
       .blink_counter = 0,
-      .force_full_update = 1, // 첫 번째는 전체 업데이트
+      .force_full_update = 1,    // 첫 번째는 전체 업데이트
       .timer_indicator_blink = 0 // 타이머 표시기 초기값
   };
 
@@ -452,7 +452,7 @@ void StartDisplayTask(void *argument)
     // 카운터 증가
     current_status.progress_update_counter++;
     current_status.blink_counter++;
-    
+
     // 배터리 전압을 퍼센티지로 변환 (ADC 값 기반)
     uint8_t battery_percent = 0;
     static uint8_t prev_battery_display = 255; // 이전 배터리 표시값 (필터링용)
@@ -503,7 +503,7 @@ void StartDisplayTask(void *argument)
     {
       timer_status = TIMER_STATUS_RUNNING;
     }
-    
+
     // 타이머 실행 표시기 제어 (0.5초마다 토글)
     if (timer_status == TIMER_STATUS_RUNNING)
     {
@@ -671,8 +671,8 @@ void StartButtonTask(void *argument)
           // STANDBY에서 1초 이하 클릭 -> ON 상태로 전환
           if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS) && !Button_State.is_start_to_cooling)
           {
-            Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
             HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
+            Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
 
             if (Button_State.is_Start_Timer)
             {

@@ -1,7 +1,7 @@
 /build/*
 *.zip
 /CMakeFiles/*
-/.ninja_deps
-/.ninja_log
-/OnBoardCtrl_FW.elf
-/OnBoardCtrl_FW.map
+*.ninja_deps
+*.elf
+*.map
+*.ninja_log

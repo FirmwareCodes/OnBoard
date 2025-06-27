@@ -600,6 +600,16 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     if (prev_timer_status != status->timer_status)
     {
         UI_DrawTimerStatus(status->timer_status);
+        
+        // 설정 모드에서 다른 상태로 변경될 때 타이머 값 강제 업데이트
+        if (prev_timer_status == TIMER_STATUS_SETTING)
+        {
+            UI_DrawTimerTime(status->timer_minutes, status->timer_seconds,
+                             (status->timer_status == TIMER_STATUS_SETTING), status->blink_counter);
+            prev_timer_minutes = status->timer_minutes;
+            prev_timer_seconds = status->timer_seconds;
+        }
+        
         prev_timer_status = status->timer_status;
     }
 

@@ -155,6 +155,7 @@ extern "C"
 
 #define DUTY_100 800
 #define DUTY_50 400
+#define DUTY_5 40
 #define DUTY_0 0
 
   /* USER CODE BEGIN Private defines */

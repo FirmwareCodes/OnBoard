@@ -120,7 +120,6 @@ int main(void)
   // OLED_1in3_C_Display(gImage_visol);
   HAL_Delay(1000);
   /* USER CODE END 2 */
-
   /* Init scheduler */
 
   /* We should never get here as control is now taken by the scheduler */
