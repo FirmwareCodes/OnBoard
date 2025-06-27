@@ -20,8 +20,8 @@
 
 // 성능 및 업데이트 주기 설정
 #define UI_UPDATE_INTERVAL_MS 50                                            // 메인 UI 업데이트 주기 (20fps)
-#define PROGRESS_UPDATE_INTERVAL_MS 200                                     // 프로그래스바 업데이트 주기 (5fps)
-#define BLINK_INTERVAL_MS 100                                              // 깜빡임 주기 (1초)
+#define PROGRESS_UPDATE_INTERVAL_MS 250                                     // 프로그래스바 업데이트 주기 (5fps)
+#define BLINK_INTERVAL_MS 250                                              // 깜빡임 주기 (1초)
 #define BLINK_COUNTER_THRESHOLD (BLINK_INTERVAL_MS / UI_UPDATE_INTERVAL_MS) // 깜빡임 카운터 임계값
 
 // 메인 영역 분할

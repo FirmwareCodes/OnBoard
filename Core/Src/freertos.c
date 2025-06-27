@@ -480,13 +480,6 @@ void StartDisplayTask(void *argument)
       }
     }
 
-    // 타이머 완료 시 알림
-    if (Button_State.minute_count == 0 && Button_State.second_count == 0 &&
-        Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
-    {
-      UI_ShowTimerComplete();
-    }
-
     // UI_UPDATE_INTERVAL_MS 주기로 업데이트
     vTaskDelayUntil(&lastWakeTime, UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS);
   }
@@ -683,7 +676,7 @@ void Callback01(void *argument)
         uint32_t cooling_time = Button_State.Timer_Value * 10;
         if (cooling_time < 30)
         {
-          cooling_time = 30;
+          cooling_time = 10;
         }
         else if (cooling_time > 60)
         {

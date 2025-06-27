@@ -538,7 +538,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
 
     // 배터리 프로그래스바 업데이트 (주기적)
     uint8_t should_update_progress = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS / UI_UPDATE_INTERVAL_MS)) == 0;
-    if (should_update_progress || prev_battery_percent != status->battery_percent)
+    if (should_update_progress && prev_battery_percent != status->battery_percent)
     {
         UI_DrawBatteryProgress(status->battery_percent);
         // 프로그래스바 그린 후 즉시 숫자 표시 (덮어쓰기 방지)
