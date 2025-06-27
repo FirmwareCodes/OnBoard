@@ -6,7 +6,7 @@
 *----------------
 * |	This version:   V2.0
 * | Date        :   2020-08-18
-* | Info        :   
+* | Info        :
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documnetation files (the "Software"), to deal
@@ -28,21 +28,20 @@
 #
 ******************************************************************************/
 #ifndef __OLED_1IN3_C_H
-#define __OLED_1IN3_C_H		
+#define __OLED_1IN3_C_H
 
 #include "DEV_Config.h"
 
 /********************************************************************************
-function:	
+function:
 		Define the full screen height length of the display
 ********************************************************************************/
-#define OLED_1in3_C_WIDTH  128//OLED width
-#define OLED_1in3_C_HEIGHT 64 //OLED height
+#define OLED_1in3_C_WIDTH 128 // OLED width
+#define OLED_1in3_C_HEIGHT 64 // OLED height
 
-//function
+// function
 void OLED_1in3_C_Init(void);
 void OLED_1in3_C_Clear(void);
 void OLED_1in3_C_Display(const UBYTE *Image);
-extern 	UBYTE *BlackImage;
-#endif  
-	 
+extern UBYTE *BlackImage;
+#endif

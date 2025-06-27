@@ -24,11 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "GUI_Paint.h"
-#include "OLED_1in3_c.h"
-#include "ImageData.h"
 #include "def.h"
-#include "fonts.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -119,87 +115,6 @@ Button_t Button_State = {
     .is_start_to_cooling = false,                 // 쿨링 시작 여부
     .cooling_second = 0,                          // 쿨링 초 카운트
 };
-
-// UI 관련 변수들
-static uint32_t ui_blink_counter = 0; // 깜빡임 효과용 카운터
-
-// 애니메이션 매니저
-static AnimationManager_t anim_manager = {0};
-
-// 단순화된 애니메이션 함수들
-void Animation_Init(void);
-void Animation_Update(void);
-uint8_t Animation_Start(Animation_Type_t type, uint8_t max_val);
-uint8_t Animation_GetValue(uint8_t index);
-
-// 애니메이션 초기화
-void Animation_Init(void)
-{
-  memset(&anim_manager, 0, sizeof(AnimationManager_t));
-}
-
-// 애니메이션 시작 (단순화)
-uint8_t Animation_Start(Animation_Type_t type, uint8_t max_val)
-{
-  // 빈 슬롯 찾기
-  for (uint8_t i = 0; i < 3; i++)
-  {
-    if (anim_manager.animations[i].state == ANIM_STATE_IDLE)
-    {
-      Animation_t *anim = &anim_manager.animations[i];
-      anim->type = type;
-      anim->state = ANIM_STATE_RUNNING;
-      anim->counter = 0;
-      anim->max_value = max_val;
-      anim->current_value = 0;
-      return i;
-    }
-  }
-  return 255; // 슬롯 없음
-}
-
-// 간단한 애니메이션 업데이트
-void Animation_Update(void)
-{
-  anim_manager.frame_counter++;
-
-  for (uint8_t i = 0; i < 3; i++)
-  {
-    Animation_t *anim = &anim_manager.animations[i];
-    if (anim->state != ANIM_STATE_RUNNING)
-      continue;
-
-    anim->counter++;
-
-    switch (anim->type)
-    {
-    case ANIM_TYPE_BLINK:
-      anim->current_value = ((anim->counter / 10) % 2) ? anim->max_value : 0;
-      break;
-
-    case ANIM_TYPE_BOUNCE:
-    {
-      uint8_t cycle = anim->counter % 40; // 2초 주기
-      if (cycle < 20)
-        anim->current_value = (cycle * anim->max_value) / 20;
-      else
-        anim->current_value = ((40 - cycle) * anim->max_value) / 20;
-    }
-    break;
-
-    default:
-      break;
-    }
-  }
-}
-
-// 애니메이션 값 가져오기
-uint8_t Animation_GetValue(uint8_t index)
-{
-  if (index >= 3)
-    return 0;
-  return anim_manager.animations[index].current_value;
-}
 
 /* USER CODE END Variables */
 
@@ -446,9 +361,6 @@ void StartDisplayTask(void *argument)
 
   char display_text[64];
 
-  // 애니메이션 시스템 초기화
-  Animation_Init();
-
   // Paint 시스템 초기화
   Paint_NewImage(BlackImage, 128, 64, 180, WHITE);
   Paint_SelectImage(BlackImage);
@@ -458,88 +370,7 @@ void StartDisplayTask(void *argument)
   /* Infinite loop */
   for (;;)
   {
-    // 애니메이션 업데이트 (20fps)
-    Animation_Update();
-
-    // 화면 초기화
-    Paint_Clear(BLACK);
-
-    // UI 카운터 증가 (깜빡임 효과용)
-    ui_blink_counter++;
-
-    // === 원형 프로그래스 배터리 UI ===
-
-    // 배터리 상태 계산
-    uint8_t bat_percent = (uint8_t)((float)(Adc_State.VBat_ADC_Value - 700) / 2200 * 100);
-    if (bat_percent > 100)
-    {
-      bat_percent = 0;
-    }
-
-    // 화면 중앙 좌표
-    uint16_t center_x = 64;
-    uint16_t center_y = 32;
-
-    // 원형 배터리 프로그래스 애니메이션
-    Draw_AnimatedBatteryCircle(center_x, center_y, bat_percent, ui_blink_counter);
-
-    // 중앙에 배터리 퍼센티지 표시
-    sprintf(display_text, "%d%%", bat_percent);
-    uint8_t text_width = (bat_percent < 100) ? 24 : 36; // Font12 기준 대략적인 너비
-    Paint_DrawString_EN(center_x - text_width/2, center_y - 6, display_text, &Font12, WHITE, BLACK);
-
-    // 상단: 타이머 설정값과 상태
-    sprintf(display_text, "%dm", Button_State.Timer_Value);
-    Paint_DrawString_EN(2, 2, display_text, &Font12, WHITE, BLACK);
-
-    // 상태 아이콘 (우측 상단)
-    if (Button_State.is_Start_Timer)
-    {
-      DRAW_ICON(108, 2, ICON_SMALL_PLAY, WHITE, BLACK);
-    }
-    else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
-    {
-      DRAW_ICON(108, 2, ICON_SMALL_TIMER, WHITE, BLACK);
-    }
-    else if (Button_State.is_start_to_cooling)
-    {
-      DRAW_ICON(108, 2, ICON_SMALL_STOP, WHITE, BLACK);
-    }
-    else
-    {
-      DRAW_ICON(108, 2, ICON_SMALL_READY, WHITE, BLACK);
-    }
-
-    // 하단 정보 표시
-    if (Button_State.is_Start_Timer)
-    {
-      // 타이머 실행 중 - 남은 시간 표시
-      sprintf(display_text, "%02d:%02d", Button_State.minute_count, Button_State.second_count);
-      Paint_DrawString_EN(center_x - 30, 50, display_text, &Font12, WHITE, BLACK);
-    }
-    else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
-    {
-      // 설정 모드 - 깜빡이는 텍스트
-      if ((ui_blink_counter / 10) % 2 == 0)
-      {
-        Paint_DrawString_EN(center_x - 24, 50, "SETUP", &Font12, WHITE, BLACK);
-      }
-    }
-    else if (Button_State.is_start_to_cooling)
-    {
-      // 쿨링 모드 - 쿨링 시간 표시
-      sprintf(display_text, "Cool:%ds", Button_State.cooling_second);
-      Paint_DrawString_EN(center_x - 36, 50, display_text, &Font12, WHITE, BLACK);
-    }
-    else
-    {
-  
-    }
-
-    // 배터리 전압 표시 (좌측 하단, 작은 글씨)
-    sprintf(display_text, "%dmV", Adc_State.VBat_ADC_Value);
-    Paint_DrawString_EN(2, 54, display_text, &Font12, WHITE, BLACK);
-
+   
     // 디스플레이 업데이트
     OLED_1in3_C_Display(BlackImage);
 

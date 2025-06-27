@@ -32,6 +32,7 @@
 #include "stdio.h"
 #include "DEV_Config.h"
 
+UBYTE *BlackImage;
 /*******************************************************************************
 function:
 			Hardware reset

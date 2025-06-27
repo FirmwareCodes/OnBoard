@@ -2,6 +2,10 @@
     "files.associations": {
         "main.h": "c",
         "cmsis_os.h": "c",
-        "test.h": "c"
+        "test.h": "c",
+        "def.h": "c",
+        "freertos.h": "c",
+        "task.h": "c",
+        "oled_1in3_c.h": "c"
     }
 }

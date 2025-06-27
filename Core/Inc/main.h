@@ -53,38 +53,6 @@ extern "C"
     BUTTON_STATE_TIMER_SET,
   } Button_State_t;
 
-  // 애니메이션 타입 정의 (단순화)
-  typedef enum
-  {
-    ANIM_TYPE_NONE = 0,
-    ANIM_TYPE_BLINK,
-    ANIM_TYPE_BOUNCE
-  } Animation_Type_t;
-
-  // 애니메이션 상태
-  typedef enum
-  {
-    ANIM_STATE_IDLE = 0,
-    ANIM_STATE_RUNNING
-  } Animation_State_t;
-
-  // 단순화된 애니메이션 구조체
-  typedef struct
-  {
-    Animation_Type_t type : 4;    // 4비트로 타입 저장
-    Animation_State_t state : 4;  // 4비트로 상태 저장
-    uint8_t counter;              // 간단한 카운터 (16비트 -> 8비트)
-    uint8_t max_value;            // 최대값
-    uint8_t current_value;        // 현재값
-  } Animation_t;
-
-  // 단순화된 애니메이션 매니저
-  typedef struct
-  {
-    Animation_t animations[3];    // 최대 3개로 축소
-    uint16_t frame_counter;       // 프레임 카운터 (32비트 -> 16비트)
-  } AnimationManager_t;
-
   typedef struct
   {
     uint16_t LED1_ADC_Value; // LED1 ADC 값

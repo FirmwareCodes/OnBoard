@@ -113,7 +113,6 @@ int main(void)
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
   HAL_GPIO_WritePin(System_LED_GPIO_Port, System_LED_Pin, GPIO_PIN_SET);
-  OLED_1in3_c_test();
 
   Paint_Clear(BLACK);
   OLED_1in3_C_Display(gImage_visol);

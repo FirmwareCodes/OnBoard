@@ -86,50 +86,6 @@ extern "C"
   extern cFONT Font12CN;
   extern cFONT Font24CN;
 
-/* Simple Icon Font Character Mapping for FontIcon16 (128x64 OLED Optimized) */
-#define ICON_SPACE ' '        // 0x20 - Empty space
-#define ICON_CONNECTED '!'    // 0x21 - Connected O (큰 원)
-#define ICON_DISCONNECTED '"' // 0x22 - Disconnected X (큰 X)
-#define ICON_STANDBY '#'      // 0x23 - STANDBY (사각형 안 대기선)
-#define ICON_TIMER_SET '$'    // 0x24 - TIMER SET (별 모양 톱니바퀴)
-
-/* 새로운 대형 배터리 아이콘들 (배터리 강조용) */
-#define ICON_BATTERY_LARGE_EMPTY '&'   // 0x26 - 대형 빈 배터리
-#define ICON_BATTERY_LARGE_LOW '\''    // 0x27 - 대형 낮은 배터리
-#define ICON_BATTERY_LARGE_MID '('     // 0x28 - 대형 중간 배터리
-#define ICON_BATTERY_LARGE_HIGH ')'    // 0x29 - 대형 높은 배터리
-#define ICON_BATTERY_LARGE_FULL '*'    // 0x2A - 대형 풀 배터리
-
-/* 작은 상태 아이콘들 */
-#define ICON_SMALL_TIMER '+'    // 0x2B - 작은 타이머 아이콘
-#define ICON_SMALL_PLAY ','     // 0x2C - 작은 재생 아이콘
-#define ICON_SMALL_STOP '-'     // 0x2D - 작은 정지 아이콘
-#define ICON_SMALL_READY '.'    // 0x2E - 작은 대기 아이콘
-
-/* 연결 상태 아이콘들 */
-#define ICON_CONNECTION_DOT '/'  // 0x2F - 연결 점
-#define ICON_NO_CONNECTION '0'   // 0x30 - 연결 안됨 X
-
-/* 특수 아이콘들 */
-#define ICON_BATTERY_CRITICAL '1'  // 0x31 - 위험 배터리
-#define ICON_PERCENT_SIGN '2'      // 0x32 - 퍼센트 기호
-
-/* 기존 아이콘들 (호환성을 위해 유지) */
-#define ICON_PLAY '&'         // 0x26 - PLAY (재생 삼각형) - 대형 배터리와 중복됨
-#define ICON_STOP '\''        // 0x27 - STOP (정지 사각형) - 대형 배터리와 중복됨
-
-/* Battery Icon Definitions (7 levels) - 기존 소형 배터리 */
-#define ICON_BATTERY_EMPTY 44    // 0x2C - BATTERY EMPTY (빈 배터리)
-#define ICON_BATTERY_VERY_LOW 45 // 0x2D - BATTERY VERY LOW (1칸 채움)
-#define ICON_BATTERY_LOW 46     // 0x2E - BATTERY LOW (2칸 채움)
-#define ICON_BATTERY_MIDLOW 47  // 0x2F - BATTERY MIDLOW (3칸 채움)
-#define ICON_BATTERY_MID 48     // 0x30 - BATTERY MID (4칸 채움)
-#define ICON_BATTERY_MIDHIGH 49 // 0x31 - BATTERY MIDHIGH (5칸 채움)
-#define ICON_BATTERY_HIGH 50     // 0x32 - BATTERY HIGH (6칸 채움)
-#define ICON_BATTERY_FULL 51     // 0x33 - BATTERY FULL (완전 채움)
-
-/* Helper macros for drawing icons */
-#define DRAW_ICON(x, y, icon, fg, bg) Paint_DrawChar(x, y, icon, &FontIcon16, fg, bg)
 
 #ifdef __cplusplus
 }
