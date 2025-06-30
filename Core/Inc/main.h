@@ -45,7 +45,7 @@ extern "C"
   typedef enum
   {
     LED_STATE_LOW = 0,
-    LED_STATE_FLOATING,
+    LED_STATE_MIDDLE,
     LED_STATE_HIGH
   } LED_State_t;
 
@@ -158,6 +158,12 @@ extern "C"
 #define DUTY_5 40
 #define DUTY_0 0
 
+#define LED_LOW_MAX 2100
+#define LED_LOW_MIN 1500
+#define LED_MIDDLE_MAX 2600
+#define LED_MIDDLE_MIN 2100
+#define LED_HIGH_MAX 4095
+#define LED_HIGH_MIN 2600
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */
