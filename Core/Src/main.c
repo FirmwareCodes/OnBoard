@@ -114,10 +114,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_GPIO_WritePin(System_LED_GPIO_Port, System_LED_Pin, GPIO_PIN_SET);
 
-  OLED_1in3_c_test();
+  OLED_1in3_C_Init();
 
   Paint_Clear(BLACK);
-  // OLED_1in3_C_Display(gImage_visol);
+  OLED_1in3_C_Display(gImage_visol);
   HAL_Delay(1000);
   /* USER CODE END 2 */
   /* Init scheduler */

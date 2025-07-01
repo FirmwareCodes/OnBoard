@@ -160,10 +160,10 @@ extern "C"
 
 #define LED_LOW_MAX 2100
 #define LED_LOW_MIN 1500
-#define LED_MIDDLE_MAX 2600
+#define LED_MIDDLE_MAX 2800
 #define LED_MIDDLE_MIN 2100
 #define LED_HIGH_MAX 4095
-#define LED_HIGH_MIN 2600
+#define LED_HIGH_MIN 2800
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */

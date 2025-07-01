@@ -7,6 +7,7 @@
         "freertos.h": "c",
         "task.h": "c",
         "oled_1in3_c.h": "c",
-        "ui_layout.h": "c"
+        "ui_layout.h": "c",
+        "dev_config.h": "c"
     }
 }

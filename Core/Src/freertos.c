@@ -93,17 +93,17 @@ extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim2;
 
 Adc_t Adc_State = {
-    .LED1_ADC_Value = 0,              // LED1 ADC 값
-    .LED2_ADC_Value = 0,              // LED2 ADC 값
-    .VBat_ADC_Value = 0,              // VBat ADC 값
+    .LED1_ADC_Value = 0,            // LED1 ADC 값
+    .LED2_ADC_Value = 0,            // LED2 ADC 값
+    .VBat_ADC_Value = 0,            // VBat ADC 값
     .LED1_State = LED_STATE_MIDDLE, // LED1 상태
     .LED2_State = LED_STATE_MIDDLE, // LED2 상태
-    .State_Start_Time = 0,            // 상태 시작 시간
-    .Current_PWM_Duty = 0,            // 현재 PWM 듀티
-    .VBat_Filtered = 0,               // 필터링된 VBat 값
-    .VBat_Buffer = {0},               // VBat 이동평균 버퍼
-    .VBat_Buffer_Index = 0,           // VBat 버퍼 인덱스
-    .VBat_Buffer_Full = 0,            // VBat 버퍼 채워짐 여부
+    .State_Start_Time = 0,          // 상태 시작 시간
+    .Current_PWM_Duty = 0,          // 현재 PWM 듀티
+    .VBat_Filtered = 0,             // 필터링된 VBat 값
+    .VBat_Buffer = {0},             // VBat 이동평균 버퍼
+    .VBat_Buffer_Index = 0,         // VBat 버퍼 인덱스
+    .VBat_Buffer_Full = 0,          // VBat 버퍼 채워짐 여부
 };
 
 Button_t Button_State = {
@@ -356,7 +356,7 @@ void StartAdcTask(void *argument)
     // 최종 필터링된 값을 VBat_ADC_Value에 저장
     Adc_State.VBat_ADC_Value = Adc_State.VBat_Filtered;
 
-    // 간단한 LED 상태 판단 LOW(1500~2050) MIDDLE(2050~2500) HIGH(2500~4095) 0630 기준 
+    // 간단한 LED 상태 판단 LOW(1500~2050) MIDDLE(2050~2500) HIGH(2500~4095) 0630 기준
     // LOW 1.5V(1900) , MIDDLE 1.77V(2200) , HIGH 2.4V(3000)
     Adc_State.LED1_State = (Adc_State.LED1_ADC_Value < LED_LOW_MAX && Adc_State.LED1_ADC_Value > LED_LOW_MIN) ? LED_STATE_LOW : (Adc_State.LED1_ADC_Value >= LED_HIGH_MIN && Adc_State.LED1_ADC_Value <= LED_HIGH_MAX) ? LED_STATE_HIGH
                                                                                                                                                                                                                        : LED_STATE_MIDDLE;
@@ -434,6 +434,8 @@ void StartDisplayTask(void *argument)
 
   // UI 상태 초기화
   UI_Status_t current_status = {
+      .init_bat_animation = false,
+      .init_battery_percent = 0,
       .battery_percent = 0,
       .timer_minutes = 0,
       .timer_seconds = 0,
@@ -508,7 +510,7 @@ void StartDisplayTask(void *argument)
     // 타이머 실행 표시기 제어 (0.5초마다 토글)
     if (timer_status == TIMER_STATUS_RUNNING)
     {
-      // 타이머 실행 중: 0.5초마다 토글 (50ms * 10 = 500ms)
+      // 타이머 실행 중: 0.5초마다 토글 
       current_status.timer_indicator_blink = (current_status.blink_counter / 10) % 2;
     }
     else
@@ -558,13 +560,13 @@ void StartDisplayTask(void *argument)
     // LED1 연결 상태 (ADC 값이 특정 범위에 있으면 연결됨)
     if (Adc_State.LED1_State != LED_STATE_MIDDLE)
     {
-      l1_connected = LED_CONNECTED;
+      l1_connected = Adc_State.LED1_State == LED_STATE_LOW ? LED_CONNECTED_2 : LED_CONNECTED_4;
     }
 
     // LED2 연결 상태 (ADC 값이 특정 범위에 있으면 연결됨)
     if (Adc_State.LED2_State != LED_STATE_MIDDLE)
     {
-      l2_connected = LED_CONNECTED;
+      l2_connected = Adc_State.LED2_State == LED_STATE_LOW ? LED_CONNECTED_2 : LED_CONNECTED_4;
     }
 
     // UI 상태 구조체 업데이트
@@ -576,24 +578,10 @@ void StartDisplayTask(void *argument)
     current_status.l2_connected = l2_connected;
     current_status.cooling_seconds = (uint8_t)Button_State.cooling_second;
 
-    // 최적화된 화면 그리기
     UI_DrawFullScreenOptimized(&current_status);
 
-    // 배터리 부족 경고 (10% 이하일 때)
-    if (battery_percent <= 10 && battery_percent > 0)
-    {
-      // 5초마다 한 번씩 경고 표시 (50ms * 100 = 5초)
-      static uint32_t low_battery_counter = 0;
-      low_battery_counter++;
-      if (low_battery_counter >= 100)
-      {
-        UI_ShowLowBatteryWarning();
-        low_battery_counter = 0;
-      }
-    }
-
-    // UI_UPDATE_INTERVAL_MS 주기로 업데이트
-    vTaskDelayUntil(&lastWakeTime, UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS);
+    // UI_UPDATE_INTERVAL_MS 주기로 업데이트, 초기 애니메이션 때에는 10ms 주기로 업데이트
+    vTaskDelayUntil(&lastWakeTime, (current_status.init_bat_animation ? UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS : 10 * portTICK_PERIOD_MS));
   }
   /* USER CODE END StartDisplayTask */
 }
@@ -692,7 +680,7 @@ void StartButtonTask(void *argument)
               }
               Button_State.cooling_second = cooling_second;
             }
-            else if (Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
+            else if(!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
             {
               osTimerStop(MainTimerHandle);
               HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
@@ -806,8 +794,8 @@ void Callback01(void *argument)
       if (Button_State.cooling_second <= 0)
       {
         Button_State.is_start_to_cooling = false;
-        HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
         osTimerStop(MainTimerHandle);
+        HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
       }
     }
   }

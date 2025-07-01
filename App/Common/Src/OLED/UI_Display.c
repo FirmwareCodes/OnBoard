@@ -32,11 +32,16 @@ extern const unsigned char standby_icon_19x19[];
 extern const unsigned char running_icon_19x19[];
 extern const unsigned char setting_icon_19x19[];
 extern const unsigned char cooling_icon_19x19[];
+
+extern const unsigned char percent_12x12[];
+extern const unsigned char exclamation_12x12[];
+
 extern const unsigned char l1_connected_icon_8x8[];
 extern const unsigned char l1_disconnected_icon_8x8[];
 extern const unsigned char l2_connected_icon_8x8[];
 extern const unsigned char l2_disconnected_icon_8x8[];
 extern const unsigned char digit_5x7[10][7];
+extern const unsigned char exclamation_5x7[7];
 extern const unsigned char percent_5x7[7];
 extern const unsigned char colon_3x7[7];
 
@@ -158,24 +163,6 @@ void UI_DrawNumber(uint16_t x, uint16_t y, uint16_t number, uint16_t color)
 }
 
 /**
- * @brief 퍼센트 기호 그리기
- */
-void UI_DrawPercent(uint16_t x, uint16_t y, uint16_t color)
-{
-    for (int row = 0; row < 7; row++)
-    {
-        unsigned char byte_data = percent_5x7[row];
-        for (int col = 0; col < 5; col++)
-        {
-            if (byte_data & (0x10 >> col))
-            {
-                Paint_SetPixel(x + col, y + row, color);
-            }
-        }
-    }
-}
-
-/**
  * @brief 콜론 그리기
  */
 void UI_DrawColon(uint16_t x, uint16_t y, uint16_t color)
@@ -225,6 +212,25 @@ void UI_DrawIcon19x19(uint16_t x, uint16_t y, const unsigned char *icon_data, ui
         {
             if (data & (0x800000 >> col))
             { // 최상위 비트부터 19비트 확인
+                Paint_SetPixel(x + col, y + row, color);
+            }
+        }
+    }
+}
+
+/**
+ * @brief 12x16 비트맵 아이콘 그리기
+ */
+void UI_DrawIcon12x16(uint16_t x, uint16_t y, const unsigned char *icon_data, uint16_t color)
+{
+    for (int row = 0; row < 12; row++)
+    {
+        uint16_t data = (icon_data[row * 2] << 8) | icon_data[row * 2 + 1];
+
+        for (int col = 0; col < 16; col++)
+        {
+            if (data & (0x8000 >> col))
+            {
                 Paint_SetPixel(x + col, y + row, color);
             }
         }
@@ -351,7 +357,7 @@ void UI_DrawBatteryProgress(uint8_t percent)
 void UI_DrawBatteryPercentage(uint8_t percent)
 {
     uint16_t base_x = BATTERY_PERCENT_X - 20; // 중앙 정렬 조정
-    uint16_t base_y = BATTERY_PERCENT_Y - 9;  // 중앙 정렬 조정
+    uint16_t base_y = BATTERY_PERCENT_Y - 12; // 중앙 정렬 조정
 
     // 100% 처리 (3자리 숫자) - 프로그래스바 침범 방지를 위해 위치 조정
     if (percent == 100)
@@ -363,6 +369,7 @@ void UI_DrawBatteryPercentage(uint8_t percent)
         UI_DrawDigitLarge(safe_x, base_y, 1, COLOR_WHITE, 1.5);
         UI_DrawDigitLarge(safe_x + 11, base_y, 0, COLOR_WHITE, 1.5); // 간격 줄임
         UI_DrawDigitLarge(safe_x + 22, base_y, 0, COLOR_WHITE, 1.5); // 간격 줄임
+        // Paint_DrawString_EN(safe_x + 11, base_y + 12, "%", &Font24, COLOR_WHITE, COLOR_BLACK);
     }
     // 10-99% 처리 (2자리 숫자)
     else if (percent >= 10)
@@ -371,8 +378,9 @@ void UI_DrawBatteryPercentage(uint8_t percent)
         uint16_t clear_x = base_x + 6;
         Paint_DrawRectangle(clear_x - 2, base_y - 2, clear_x + 26, base_y + 16, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-        UI_DrawDigitLarge(base_x + 6, base_y, percent / 10, COLOR_WHITE, 2);
-        UI_DrawDigitLarge(base_x + 20, base_y, percent % 10, COLOR_WHITE, 2);
+        UI_DrawDigitLarge(base_x + 7, base_y, percent / 10, COLOR_WHITE, 2);
+        UI_DrawDigitLarge(base_x + 21, base_y, percent % 10, COLOR_WHITE, 2);
+        // Paint_DrawString_EN(base_x + 12, base_y + 12, "%", &Font24, COLOR_WHITE, COLOR_BLACK);
     }
     // 0-9% 처리 (1자리 숫자)
     else
@@ -380,9 +388,12 @@ void UI_DrawBatteryPercentage(uint8_t percent)
         // 1자리 숫자 영역만 클리어 (12픽셀 폭, 중앙 정렬)
         uint16_t clear_x = base_x + 12;
         Paint_DrawRectangle(clear_x - 2, base_y - 2, clear_x + 14, base_y + 16, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-
-        UI_DrawDigitLarge(base_x + 12, base_y, percent, COLOR_WHITE, 2);
+        // Paint_DrawString_EN(clear_x + 9, base_y, "%", &Font24, COLOR_WHITE, COLOR_BLACK);
+        UI_DrawDigitLarge(base_x + 14, base_y, percent, COLOR_WHITE, 2);
     }
+
+    // 배터리 퍼센티지 아이콘 그리기
+    UI_DrawIcon12x16(base_x + 11, base_y + 17, percent_12x16, COLOR_WHITE);
 }
 
 /**
@@ -441,7 +452,7 @@ void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, ui
 void UI_DrawTimerStatus(Timer_Status_t status)
 {
     // 19x19 아이콘을 우측 영역에 중앙 정렬
-    uint16_t icon_x = INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2); // 우측 영역 중앙
+    uint16_t icon_x = (INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2)) - 1; // 우측 영역 중앙
     uint16_t icon_y = INFO_STATUS_Y;
 
     // 상태 아이콘 영역을 더 넓게 클리어 (겹침 완전 방지)
@@ -476,10 +487,23 @@ void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
     Paint_DrawRectangle(INFO_L1_X - INFO_L1_RADIUS, INFO_L1_Y - INFO_L1_RADIUS, INFO_L2_X + INFO_L2_RADIUS, INFO_L2_Y + INFO_L2_RADIUS, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
     // L1 상태 표시 (원형)
-    if (l1_status == LED_CONNECTED)
+    if (l1_status == LED_CONNECTED_2 || l1_status == LED_CONNECTED_4)
     {
         // 연결됨: 채워진 원형
         UI_DrawCircle(INFO_L1_X, INFO_L1_Y, INFO_L1_RADIUS, COLOR_WHITE, 1);
+
+        if (l1_status == LED_CONNECTED_2)
+        {
+            Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y, INFO_L1_X - 2, INFO_L1_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y, INFO_L1_X + 2, INFO_L1_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        }
+        else
+        {
+            Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y - 2, INFO_L1_X - 2, INFO_L1_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y - 2, INFO_L1_X + 2, INFO_L1_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y + 2, INFO_L1_X - 2, INFO_L1_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y + 2, INFO_L1_X + 2, INFO_L1_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        }
     }
     else
     {
@@ -488,15 +512,36 @@ void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
     }
 
     // L2 상태 표시 (원형)
-    if (l2_status == LED_CONNECTED)
+    if (l2_status == LED_CONNECTED_2 || l2_status == LED_CONNECTED_4)
     {
         // 연결됨: 채워진 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 1);
+
+        if (l2_status == LED_CONNECTED_2)
+        {
+            Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y, INFO_L2_X - 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y, INFO_L2_X + 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        }
+        else
+        {
+            Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y - 2, INFO_L2_X - 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y - 2, INFO_L2_X + 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y + 2, INFO_L2_X - 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y + 2, INFO_L2_X + 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        }
+
+        // Paint_DrawLine(INFO_L2_X, INFO_L2_Y - 10, INFO_L2_X, INFO_L2_Y - 7, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // Paint_DrawLine(INFO_L2_X - 7, INFO_L2_Y - 8, INFO_L2_X - 6, INFO_L2_Y - 5, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // Paint_DrawLine(INFO_L2_X + 7, INFO_L2_Y - 8, INFO_L2_X + 6, INFO_L2_Y - 5, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     }
     else
     {
         // 연결 안됨: 빈 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 0);
+
+        // Paint_DrawLine(INFO_L2_X, INFO_L2_Y - 10, INFO_L2_X, INFO_L2_Y - 7, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // Paint_DrawLine(INFO_L2_X - 7, INFO_L2_Y - 8, INFO_L2_X - 6, INFO_L2_Y - 5, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // Paint_DrawLine(INFO_L2_X + 7, INFO_L2_Y - 8, INFO_L2_X + 6, INFO_L2_Y - 5, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     }
 }
 
@@ -517,9 +562,6 @@ void UI_DrawFullScreen(UI_Status_t *status)
 {
     // 화면 클리어
     UI_Clear();
-
-    // 좌측 영역: 배터리 (81x64)
-    UI_DrawBatteryArea(status->battery_percent);
 
     // 타이머 실행 표시기 (좌측 상단)
     UI_DrawTimerIndicator(status->timer_indicator_blink);
@@ -560,12 +602,47 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         prev_l1_connected = status->l1_connected;
         prev_l2_connected = status->l2_connected;
         prev_timer_indicator = status->timer_indicator_blink;
+
         return;
+    }
+
+    if (status->init_battery_percent <= 100 && status->init_bat_animation == false)
+    {
+        uint8_t real_bat = status->battery_percent;
+        status->battery_percent = status->init_battery_percent;
+        status->init_battery_percent += 2;
+        if (status->init_battery_percent > real_bat)
+        {
+            status->init_bat_animation = true;
+        }
+    }
+
+    uint16_t base_x = 60; // 중앙 정렬 조정
+    uint16_t base_y = 2;  // 중앙 정렬 조정
+
+    // 배터리 부족 경고
+    if (status->battery_percent <= 20 && status->battery_percent > 0 && status->init_bat_animation == true)
+    {
+        uint8_t interval = (status->battery_percent / 5) + 1;
+        uint16_t update_interval = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS * interval / UI_UPDATE_INTERVAL_MS));
+        // 느낌표 아이콘 그리기
+        if (update_interval == 0 || update_interval == 1)
+        {
+            UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_BLACK);
+        }
+        else
+        {
+            UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_WHITE);
+        }
+    }
+    else
+    {
+        UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_BLACK);
     }
 
     // 배터리 프로그래스바 업데이트 (주기적)
     uint8_t should_update_progress = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS / UI_UPDATE_INTERVAL_MS)) == 0;
-    if (should_update_progress && prev_battery_percent != status->battery_percent)
+    if ((should_update_progress || !status->init_bat_animation) && prev_battery_percent != status->battery_percent)
     {
         UI_DrawBatteryProgress(status->battery_percent);
         // 프로그래스바 그린 후 즉시 숫자 표시 (덮어쓰기 방지)
@@ -600,7 +677,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     if (prev_timer_status != status->timer_status)
     {
         UI_DrawTimerStatus(status->timer_status);
-        
+
         // 설정 모드에서 다른 상태로 변경될 때 타이머 값 강제 업데이트
         if (prev_timer_status == TIMER_STATUS_SETTING)
         {
@@ -609,7 +686,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
             prev_timer_minutes = status->timer_minutes;
             prev_timer_seconds = status->timer_seconds;
         }
-        
+
         prev_timer_status = status->timer_status;
     }
 

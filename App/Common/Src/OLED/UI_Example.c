@@ -19,8 +19,8 @@ static UI_Status_t g_ui_status = {
     .timer_minutes = 2,                 // 초기 타이머 2분
     .timer_seconds = 30,                // 초기 타이머 30초
     .timer_status = TIMER_STATUS_STANDBY, // 초기 대기 상태
-    .l1_connected = LED_CONNECTED,      // L1 연결됨
-    .l2_connected = LED_CONNECTED,      // L2 연결됨
+    .l1_connected = LED_DISCONNECTED,      // L1 연결됨
+    .l2_connected = LED_DISCONNECTED,      // L2 연결됨
     .cooling_seconds = 0                // 쿨링 시간 없음
 };
 
