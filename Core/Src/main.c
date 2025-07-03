@@ -19,6 +19,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "../../App/Common/Inc/OLED/UI_Layout.h"
+#include "../../App/Common/Inc/OLED/OLED_1in3_c.h"
+#include <stdio.h>
+#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -51,7 +55,35 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+// OLED 로고 이미지는 외부에서 참조
+extern const unsigned char gImage_visol[];
 
+// 모니터링 도구와의 시리얼 통신을 위한 변수들
+uint8_t uart_rx_buffer[128];
+uint8_t uart_tx_buffer[1200];  // 화면 데이터 전송을 위한 큰 버퍼
+volatile uint8_t uart_command_received = 0;
+volatile uint8_t uart_data_ready = 0;
+
+// 모니터링 모드 제어
+uint8_t monitoring_enabled = 0;  // 0: 비활성, 1: 활성
+uint8_t auto_screen_update = 0;  // 자동 화면 업데이트 플래그
+
+// 현재 UI 상태 (더미 데이터)
+UI_Status_t current_ui_status = {
+    .init_bat_animation = true,
+    .init_battery_percent = 0,
+    .battery_percent = 75,
+    .timer_minutes = 5,
+    .timer_seconds = 30,
+    .timer_status = TIMER_STATUS_RUNNING,
+    .l1_connected = LED_CONNECTED_2,
+    .l2_connected = LED_DISCONNECTED,
+    .cooling_seconds = 0,
+    .progress_update_counter = 0,
+    .blink_counter = 0,
+    .force_full_update = 1,
+    .timer_indicator_blink = 1
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,12 +101,24 @@ void StartButtonTask(void *argument);
 void Callback01(void *argument);
 
 /* USER CODE BEGIN PFP */
-
+// 모니터링 도구와의 시리얼 통신 함수들
+void UI_SendScreenDataOverUART(void);
+void UI_SendStatusOverUART(void);
+void UI_ProcessUARTCommand(uint8_t* command, uint16_t length);
+void UI_SendResponseOverUART(const char* response);
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+// 모니터링 함수들을 다른 파일에서 호출할 수 있도록 extern 선언
+void UI_SendScreenDataOverUART(void);
+void UI_SendStatusOverUART(void);
+void UI_SendPeriodicMonitoringData(void);
+void UI_UpdateStatusSimulation(void);
 
+// 전역 변수 extern 선언 (다른 파일에서 사용)
+extern UI_Status_t current_ui_status;
 /* USER CODE END 0 */
 
 /**
@@ -119,6 +163,8 @@ int main(void)
   Paint_Clear(BLACK);
   OLED_1in3_C_Display(gImage_visol);
   HAL_Delay(1000);
+  
+  // UART 초기화는 UartTask에서 처리됩니다
   /* USER CODE END 2 */
   /* Init scheduler */
 
