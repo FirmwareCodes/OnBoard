@@ -45,6 +45,27 @@ extern const unsigned char exclamation_5x7[7];
 extern const unsigned char percent_5x7[7];
 extern const unsigned char colon_3x7[7];
 
+// 최적화를 위한 전역 변수 (삼각함수 룩업 테이블)
+static float sin_table[720] = {0}; // 0.5도 간격으로 360도 * 2
+static float cos_table[720] = {0};
+static uint8_t lookup_table_initialized = 0;
+
+/**
+ * @brief 삼각함수 룩업 테이블 초기화 (최초 1회만 실행)
+ */
+static void init_trig_lookup_table(void)
+{
+    if (lookup_table_initialized) return;
+    
+    for (int i = 0; i < 720; i++)
+    {
+        float angle = (i * 0.5f - 90.0f) * M_PI / 180.0f; // -90도부터 시작 (12시 방향)
+        sin_table[i] = sin(angle);
+        cos_table[i] = cos(angle);
+    }
+    lookup_table_initialized = 1;
+}
+
 /**
  * @brief UI 초기화 (메인에서 이미 초기화 완료된 상태에서 호출)
  */
@@ -255,7 +276,105 @@ void UI_DrawCircle(uint16_t x, uint16_t y, uint16_t radius, uint16_t color, uint
 }
 
 /**
- * @brief 원형 프로그래스바 그리기 (최적화된 버전)
+ * @brief 부드러운 원형 그리기 (브레젠햄 알고리즘 기반)
+ */
+static void draw_smooth_circle_outline(uint16_t center_x, uint16_t center_y, uint16_t radius, uint16_t color)
+{
+    int x = radius;
+    int y = 0;
+    int decision = 1 - radius;
+    
+    while (x >= y)
+    {
+        // 8방향 대칭으로 픽셀 그리기
+        Paint_SetPixel(center_x + x, center_y + y, color);
+        Paint_SetPixel(center_x - x, center_y + y, color);
+        Paint_SetPixel(center_x + x, center_y - y, color);
+        Paint_SetPixel(center_x - x, center_y - y, color);
+        Paint_SetPixel(center_x + y, center_y + x, color);
+        Paint_SetPixel(center_x - y, center_y + x, color);
+        Paint_SetPixel(center_x + y, center_y - x, color);
+        Paint_SetPixel(center_x - y, center_y - x, color);
+        
+        y++;
+        if (decision <= 0)
+        {
+            decision += 2 * y + 1;
+        }
+        else
+        {
+            x--;
+            decision += 2 * (y - x) + 1;
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 원형 호 그리기 (룩업 테이블 기반)
+ * @param center_x: 중심 X 좌표
+ * @param center_y: 중심 Y 좌표
+ * @param radius: 반지름
+ * @param start_angle: 시작 각도 (도)
+ * @param end_angle: 끝 각도 (도)
+ * @param color: 색상
+ * @param thickness: 두께
+ */
+static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t radius, 
+                              float start_angle, float end_angle, uint16_t color, int thickness)
+{
+    // 각도를 인덱스로 변환 (0.5도 간격)
+    int start_index = (int)(start_angle * 2.0f);
+    int end_index = (int)(end_angle * 2.0f);
+    if (end_index > 720) end_index = 720;
+    
+    // 각 두께별로 한 번에 처리
+    for (int t = 0; t < thickness; t++)
+    {
+        int current_radius = radius - t;
+        if (current_radius < 5) continue;
+        
+        int prev_x = -999, prev_y = -999; // 이전 픽셀 좌표 (초기값은 유효하지 않은 값)
+        
+        // 0.5도 간격으로 호 그리기
+        for (int i = start_index; i < end_index; i += 1)
+        {
+            int x = center_x + (int)(current_radius * cos_table[i]);
+            int y = center_y + (int)(current_radius * sin_table[i]);
+            
+            // 메인 픽셀
+            Paint_SetPixel(x, y, color);
+            
+            // 이전 픽셀과의 간격이 1보다 크면 중간 픽셀 채우기 (최적화)
+            if (prev_x != -999 && prev_y != -999)
+            {
+                int dx = x - prev_x;
+                int dy = y - prev_y;
+                
+                // 간격이 클 때만 중간 픽셀 채우기
+                if (abs(dx) > 1 || abs(dy) > 1)
+                {
+                    // 간단한 중점 보간 (브레젠햄보다 빠름)
+                    int mid_x = prev_x + dx / 2;
+                    int mid_y = prev_y + dy / 2;
+                    Paint_SetPixel(mid_x, mid_y, color);
+                    
+                    // 필요시 추가 중점
+                    if (abs(dx) > 2 || abs(dy) > 2)
+                    {
+                        Paint_SetPixel(prev_x + dx / 3, prev_y + dy / 3, color);
+                        Paint_SetPixel(prev_x + (dx * 2) / 3, prev_y + (dy * 2) / 3, color);
+                    }
+                }
+            }
+            
+            prev_x = x;
+            prev_y = y;
+        }
+    }
+}
+
+/**
+ * @brief 원형 프로그래스바 그리기 (최적화된 버전 - 부드러운 원형)
  * @param center_x: 중심 X 좌표
  * @param center_y: 중심 Y 좌표
  * @param radius: 반지름
@@ -270,36 +389,59 @@ void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint
         return; // 업데이트가 필요하지 않으면 스킵
     }
 
+    // 룩업 테이블 초기화 (최초 1회만)
+    init_trig_lookup_table();
+
     // 기존 프로그래스바 영역 클리어
     Paint_DrawCircle(center_x, center_y, radius, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-    // 외곽 원 2개 그리기 (빠른 렌더링)
-    Paint_DrawCircle(center_x, center_y, radius - 2, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-    Paint_DrawCircle(center_x, center_y, radius - 7, color, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    // 미리 계산된 값들
+    const int outer_radius = radius - 1;
+    const int inner_radius = radius - 8;
+    const int progress_start_radius = radius - 1;
+    // const int progress_end_radius = radius - 4;
+    
+    // 브레젠햄 알고리즘으로 완벽한 원형 테두리 그리기
+    draw_smooth_circle_outline(center_x, center_y, outer_radius, color);
+    draw_smooth_circle_outline(center_x, center_y, inner_radius, color);
 
-    // 진행률에 따른 호 그리기 (간소화된 버전)
-    float angle_per_percent = 360.0f / 100.0f;
-    float target_angle = progress * angle_per_percent;
+    draw_smooth_circle_outline(center_x, center_y, outer_radius+1, COLOR_BLACK);
 
-    // 성능을 위해 간격을 크게 설정 (1도 간격)
-    for (float angle = 0; angle < target_angle; angle += 1.0f)
+    // 진행률이 0이면 테두리만 그리고 종료
+    if (progress == 0) return;
+
+    // 진행률에 따른 각도 계산 (0도부터 시계방향)
+    float progress_angle = (progress * 360.0f) / 100.0f;
+
+    // 최적화된 프로그래스바 그리기 - 단일 함수로 통합
+    int progress_thickness = progress_start_radius - inner_radius; // 실제 두께 계산
+    if (progress_thickness > 7) progress_thickness = 7; // 최대 두께 제한
+    
+    draw_optimized_arc(center_x, center_y, progress_start_radius, 0, progress_angle, color, progress_thickness);
+    
+    // 시작점과 끝점에 둥근 캡 추가 (간소화된 버전)
+    if (progress > 3) // 최소 진행률이 있을 때만
     {
-        float radian = (angle - 90) * M_PI / 180.0f; // -90도로 12시 방향 시작
-
-        // 프로그래스바 두께 4픽셀
-        for (int thickness = 0; thickness < 4; thickness++)
+        // 시작점 캡 (12시 방향) - 3x3에서 2x2로 축소
+        int start_x = center_x;
+        int start_y = center_y - (radius - 4);
+        
+        Paint_SetPixel(start_x, start_y, color);
+        Paint_SetPixel(start_x + 1, start_y, color);
+        Paint_SetPixel(start_x, start_y + 1, color);
+        Paint_SetPixel(start_x + 1, start_y + 1, color);
+        
+        // 끝점 캡 (진행률이 충분할 때만) - 3x3에서 2x2로 축소
+        if (progress > 8)
         {
-            int x = center_x + (radius - 3 - thickness) * cos(radian);
-            int y = center_y + (radius - 3 - thickness) * sin(radian);
-
-            // 3x3 픽셀로 채우기 (성능 향상)
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                for (int dy = -1; dy <= 1; dy++)
-                {
-                    Paint_SetPixel(x + dx, y + dy, color);
-                }
-            }
+            float end_angle_rad = (progress_angle - 90) * M_PI / 180.0f;
+            int end_x = center_x + (int)((radius - 4) * cos(end_angle_rad));
+            int end_y = center_y + (int)((radius - 4) * sin(end_angle_rad));
+            
+            Paint_SetPixel(end_x, end_y, color);
+            Paint_SetPixel(end_x + 1, end_y, color);
+            Paint_SetPixel(end_x, end_y + 1, color);
+            Paint_SetPixel(end_x + 1, end_y + 1, color);
         }
     }
 }
@@ -617,7 +759,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         }
     }
 
-    uint16_t base_x = 60; // 중앙 정렬 조정
+    uint16_t base_x = 62; // 중앙 정렬 조정
     uint16_t base_y = 2;  // 중앙 정렬 조정
 
     // 배터리 부족 경고

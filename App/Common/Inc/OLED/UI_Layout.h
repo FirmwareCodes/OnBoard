@@ -39,9 +39,9 @@
 // 배터리 원형 프로그래스 (좌측 영역 중앙)
 #define BATTERY_CENTER_X 37     // 96/2 = 48
 #define BATTERY_CENTER_Y 32     // 64/2 = 32
-#define BATTERY_OUTER_RADIUS 30 // 더 큰 반지름
-#define BATTERY_INNER_RADIUS 20
-#define BATTERY_PROGRESS_WIDTH 6 // 더 두꺼운 프로그래스바
+#define BATTERY_OUTER_RADIUS 32 // 더 큰 반지름
+#define BATTERY_INNER_RADIUS 21
+#define BATTERY_PROGRESS_WIDTH 7 // 더 두꺼운 프로그래스바
 
 // 배터리 퍼센티지 텍스트 위치 (중앙)
 #define BATTERY_PERCENT_X BATTERY_CENTER_X
