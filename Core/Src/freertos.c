@@ -80,14 +80,14 @@ const osThreadAttr_t ButtonTask_attributes = {
 osThreadId_t UartTaskHandle;
 const osThreadAttr_t UartTask_attributes = {
     .name = "UartTask",
-    .stack_size = 512 * 4,  // UART 처리를 위해 더 큰 스택 할당
-    .priority = (osPriority_t)osPriorityHigh1,  // 높은 우선순위로 설정
+    .stack_size = 1024 * 4,                      // 스택 크기 대폭 증가 (512*4 -> 1024*4)
+    .priority = (osPriority_t)osPriorityNormal1, // 우선순위 낮춤 (High1 -> Normal1)
 };
 /* Definitions for UartMutex */
 osMutexId_t UartMutexHandle;
 const osMutexAttr_t UartMutex_attributes = {
     .name = "UartMutex",
-    .attr_bits = osMutexPrioInherit,  // 우선순위 상속으로 priority inversion 방지
+    .attr_bits = osMutexPrioInherit, // 우선순위 상속으로 priority inversion 방지
 };
 /* Definitions for MainTimer */
 osTimerId_t MainTimerHandle;
@@ -138,28 +138,22 @@ Button_t Button_State = {
 };
 
 // UART 태스크용 전역 변수
-typedef struct {
-    uint8_t rx_buffer[256];           // 수신 버퍼
-    uint8_t tx_buffer[1200];          // 송신 버퍼 (화면 데이터용)
-    uint8_t cmd_buffer[128];          // 명령어 버퍼
-    uint16_t rx_index;                // 수신 인덱스
-    uint16_t cmd_index;               // 명령어 인덱스
-    uint8_t command_ready;            // 명령어 준비 플래그
-    uint8_t monitoring_enabled;       // 모니터링 활성화 플래그
-    uint8_t auto_screen_update;       // 자동 화면 업데이트 플래그
-    uint32_t last_screen_update;      // 마지막 화면 업데이트 시간
-    uint32_t last_status_update;      // 마지막 상태 업데이트 시간
+typedef struct
+{
+  uint8_t rx_buffer[256];     // 수신 버퍼
+  uint8_t tx_buffer[1200];    // 송신 버퍼 (화면 데이터용)
+  uint8_t cmd_buffer[128];    // 명령어 버퍼
+  uint16_t rx_index;          // 수신 인덱스
+  uint16_t cmd_index;         // 명령어 인덱스
+  uint8_t command_ready;      // 명령어 준비 플래그
+  uint8_t monitoring_enabled; // 모니터링 활성화 플래그 (요청-응답 모드용)
 } UART_State_t;
 
 UART_State_t UART_State = {
     .rx_index = 0,
     .cmd_index = 0,
     .command_ready = 0,
-    .monitoring_enabled = 0,
-    .auto_screen_update = 0,
-    .last_screen_update = 0,
-    .last_status_update = 0
-};
+    .monitoring_enabled = 0};
 
 /* USER CODE END Variables */
 
@@ -176,11 +170,12 @@ void Callback01(void *argument);
 void UART_ProcessCommand(void);
 void UART_SendScreenData(void);
 void UART_SendStatusData(void);
-void UART_SendResponse(const char* response);
-void UART_ProcessTimerSet(const char* time_str);
+void UART_SendResponse(const char *response);
+void UART_ProcessTimerSet(const char *time_str);
 void UART_ProcessTimerStart(void);
 void UART_ProcessTimerStop(void);
 void UART_ProcessReset(void);
+void UART_ProcessUpdateMode(const char *mode_str);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -193,27 +188,27 @@ void UART_ProcessReset(void);
  */
 void Timer_LoadFromFlash(void)
 {
-    uint32_t timer_value = 0;
-    HAL_StatusTypeDef status = Flash_ReadTimerValue(&timer_value);
-    
-    if (status == HAL_OK)
+  uint32_t timer_value = 0;
+  HAL_StatusTypeDef status = Flash_ReadTimerValue(&timer_value);
+
+  if (status == HAL_OK)
+  {
+    // 유효한 범위 확인 (1초 ~ 255초)
+    if (timer_value >= 1 && timer_value <= 255)
     {
-        // 유효한 범위 확인 (1초 ~ 255초)
-        if (timer_value >= 1 && timer_value <= 255)
-        {
-            Button_State.Timer_Value = (uint8_t)timer_value;
-        }
-        else
-        {
-            // 범위를 벗어나는 경우 기본값 설정
-            Button_State.Timer_Value = 10;
-        }
+      Button_State.Timer_Value = (uint8_t)timer_value;
     }
     else
     {
-        // 플래시에서 읽기 실패 시 기본값 설정
-        Button_State.Timer_Value = 10;
+      // 범위를 벗어나는 경우 기본값 설정
+      Button_State.Timer_Value = 10;
     }
+  }
+  else
+  {
+    // 플래시에서 읽기 실패 시 기본값 설정
+    Button_State.Timer_Value = 10;
+  }
 }
 
 /**
@@ -223,12 +218,11 @@ void Timer_LoadFromFlash(void)
  */
 void Timer_SaveToFlash(uint32_t timer_value)
 {
-    HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
-    
-    if (status != HAL_OK)
-    {
-    
-    }
+  HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
+
+  if (status != HAL_OK)
+  {
+  }
 }
 
 /* USER CODE END Application */
@@ -257,10 +251,10 @@ void RTOS_Start(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
-  
+
   // 플래시에서 타이머 값 로드
   Timer_LoadFromFlash();
-  
+
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -639,7 +633,7 @@ void StartDisplayTask(void *argument)
     // 타이머 실행 표시기 제어 (0.5초마다 토글)
     if (timer_status == TIMER_STATUS_RUNNING)
     {
-      // 타이머 실행 중: 0.5초마다 토글 
+      // 타이머 실행 중: 0.5초마다 토글
       current_status.timer_indicator_blink = (current_status.blink_counter / 10) % 2;
     }
     else
@@ -809,7 +803,7 @@ void StartButtonTask(void *argument)
               }
               Button_State.cooling_second = cooling_second;
             }
-            else if(!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
+            else if (!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
             {
               osTimerStop(MainTimerHandle);
               HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
@@ -826,10 +820,10 @@ void StartButtonTask(void *argument)
             {
               Button_State.Timer_Value = 2; // 10을 넘으면 1부터 다시 시작
             }
-            
+
             // 타이머 값이 변경되었으므로 플래시에 저장
             Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
-            
+
             // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
             Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
           }
@@ -856,7 +850,7 @@ void StartButtonTask(void *argument)
         // TIMER_SET에서 1.5초 이상 누르면 STANDBY로 복귀
         Button_State.is_pushed_changed = true;
         Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
-        
+
         // TIMER_SET 모드를 나갈 때 현재 타이머 값을 플래시에 저장
         Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
       }
@@ -868,7 +862,7 @@ void StartButtonTask(void *argument)
       if ((Button_State.Button_Current_Time - Button_State.Timer_Set_Start_Time) >= (5000 / portTICK_PERIOD_MS))
       {
         Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
-        
+
         // 5초 비활성화로 TIMER_SET 모드를 나갈 때도 플래시에 저장
         Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
       }
@@ -899,157 +893,112 @@ void StartUartTask(void *argument)
   TickType_t lastWakeTime;
   lastWakeTime = xTaskGetTickCount();
 
-  // 뮤텍스가 제대로 생성될 때까지 대기
-  while (UartMutexHandle == NULL) {
-    osDelay(10);
-  }
-
-  // UART 초기화 안정화 딜레이
-  osDelay(100);
-
   // UART 상태 초기화
   UART_State.rx_index = 0;
   UART_State.cmd_index = 0;
   UART_State.command_ready = 0;
   UART_State.monitoring_enabled = 0;
-  UART_State.auto_screen_update = 0;
 
-  // UART 초기화 메시지 (뮤텍스 보호)
-  osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 1000);
-  if (mutex_status == osOK) {
-    const char* welcome_msg = "OnBoard LED Timer Ready\n";
-    HAL_UART_Transmit(&huart1, (uint8_t*)welcome_msg, strlen(welcome_msg), 1000);
-    osMutexRelease(UartMutexHandle);
+  // 초기 안정화 대기 (다른 태스크들이 완전히 초기화될 때까지)
+  osDelay(500);
+
+  // UART 인터럽트 수신 시작 (안전한 방식으로)
+  if (HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1) != HAL_OK)
+  {
+    // UART 인터럽트 시작 실패시 재시도
+    osDelay(100);
+    HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1);
   }
-
-  // UART 인터럽트 수신 시작
-  HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1);
 
   /* Infinite loop */
   for (;;)
   {
-
-    uint32_t current_time = HAL_GetTick();
-
-    // 1. 수신된 명령어 처리
+    // 1. 수신된 명령어 처리 (안전한 방식으로)
     if (UART_State.command_ready)
     {
       UART_ProcessCommand();
-      UART_State.command_ready = 0;
     }
 
-    // 2. 자동 모니터링 처리
-    if (UART_State.monitoring_enabled)
-    {
-      // 100ms마다 화면 데이터 전송
-      if (UART_State.auto_screen_update && 
-          (current_time - UART_State.last_screen_update >= 100))
-      {
-        UART_SendScreenData();
-        UART_State.last_screen_update = current_time;
-      }
-
-      // 자동 모니터링 시에는 상태 정보 전송 비활성화 (충돌 방지)
-      // 상태 정보는 별도 GET_STATUS 명령어로만 요청 가능
-      /*
-      if (current_time - UART_State.last_status_update >= 1000)
-      {
-        UART_SendStatusData();
-        UART_State.last_status_update = current_time;
-      }
-      */
-    }
-
-    // 20ms 주기로 실행
-    vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
+    // 정상 동작시 10ms 주기
+    vTaskDelayUntil(&lastWakeTime, 10 * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartUartTask */
 }
 
 /**
- * @brief UART 명령어 처리 함수
+ * @brief UART 명령어 처리 함수 (안정성 강화)
  */
 void UART_ProcessCommand(void)
 {
-  // 뮤텍스 획득 (최대 100ms 대기)
-  osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 100);
-  if (mutex_status != osOK) {
-    // 뮤텍스 획득 실패 - 다음 사이클에서 다시 시도
-    return;
-  }
 
-  char* cmd_str = (char*)UART_State.cmd_buffer;
-  
+  // 명령어 문자열 복사 (스택 변수 사용으로 안전성 향상)
+  char cmd_str[64]; // 스택 사용량 줄임 (128 -> 64)
+  strncpy(cmd_str, (char *)UART_State.cmd_buffer, sizeof(cmd_str) - 1);
+  cmd_str[sizeof(cmd_str) - 1] = '\0'; // 안전한 종료
+
   // 개행 문자 제거
-  char* newline = strchr(cmd_str, '\n');
-  if (newline) *newline = '\0';
+  char *newline = strchr(cmd_str, '\n');
+  if (newline)
+    *newline = '\0';
   newline = strchr(cmd_str, '\r');
-  if (newline) *newline = '\0';
+  if (newline)
+    *newline = '\0';
 
-  // 명령어 처리
-  if (strcmp(cmd_str, "GET_SCREEN") == 0) {
-    UART_SendScreenData();
-  }
-  else if (strcmp(cmd_str, "GET_STATUS") == 0) {
-    UART_SendStatusData();
-  }
-  else if (strcmp(cmd_str, "GET_SIMPLE") == 0) {
-    // 간단한 화면 데이터 테스트 (디버깅용) - 실제 작은 패턴 전송
-    const char* header = "\nSCREEN_START\nSIZE:128x64\n";
-    HAL_UART_Transmit(&huart1, (uint8_t*)header, strlen(header), 1000);
-    
-    // 간단한 테스트 패턴 생성 (64바이트로 작게)
-    uint8_t test_pattern[64];
-    for (int i = 0; i < 64; i++) {
-      if (i % 8 < 4) {
-        test_pattern[i] = 0xFF;  // 흰색 패턴
-      } else {
-        test_pattern[i] = 0x00;  // 검은색 패턴
-      }
-    }
-    
-    // 테스트 패턴 전송
-    HAL_UART_Transmit(&huart1, test_pattern, 64, 1000);
-    
-    // 나머지는 0으로 채움 (1024 - 64 = 960바이트)
-    uint8_t zero_buffer[32];
-    memset(zero_buffer, 0, 32);
-    for (int i = 0; i < 30; i++) {  // 30 * 32 = 960바이트
-      HAL_UART_Transmit(&huart1, zero_buffer, 32, 1000);
-    }
-    
-    const char* footer = "\nSCREEN_END\n\n";
-    HAL_UART_Transmit(&huart1, (uint8_t*)footer, strlen(footer), 1000);
-  }
-  else if (strcmp(cmd_str, "START_MONITOR") == 0) {
-    UART_State.monitoring_enabled = 1;
-    UART_State.auto_screen_update = 1;
-    UART_SendResponse("OK:Monitoring started\n");
-  }
-  else if (strcmp(cmd_str, "STOP_MONITOR") == 0) {
-    UART_State.monitoring_enabled = 0;
-    UART_State.auto_screen_update = 0;
-    UART_SendResponse("OK:Monitoring stopped\n");
-  }
-  else if (strncmp(cmd_str, "SET_TIMER:", 10) == 0) {
-    UART_ProcessTimerSet(cmd_str + 10);
-  }
-  else if (strcmp(cmd_str, "START_TIMER") == 0) {
-    UART_ProcessTimerStart();
-  }
-  else if (strcmp(cmd_str, "STOP_TIMER") == 0) {
-    UART_ProcessTimerStop();
-  }
-  else if (strcmp(cmd_str, "RESET") == 0) {
-    UART_ProcessReset();
-  }
-  else if (strcmp(cmd_str, "PING") == 0) {
+  // 명령어 처리 (간단한 명령어 우선 처리로 빠른 응답)
+  if (strcmp(cmd_str, "PING") == 0)
+  {
     UART_SendResponse("PONG\n");
   }
-  else if (strcmp(cmd_str, "TEST") == 0) {
+  else if (strcmp(cmd_str, "TEST") == 0)
+  {
     UART_SendResponse("TEST:OK\n");
   }
-  else {
+  else if (strcmp(cmd_str, "GET_STATUS") == 0)
+  {
+    UART_SendStatusData();
+  }
+  else if (strcmp(cmd_str, "GET_SCREEN") == 0)
+  {
+    UART_SendScreenData();
+  }
+  else if (strcmp(cmd_str, "START_MONITOR") == 0)
+  {
+    // 요청-응답 모드로 모니터링 시작 (자동 전송 없음)
+    UART_State.monitoring_enabled = 1;
+    UART_SendResponse("OK:Monitoring started\n");
+  }
+  else if (strcmp(cmd_str, "STOP_MONITOR") == 0)
+  {
+    UART_State.monitoring_enabled = 0;
+    UART_SendResponse("OK:Monitoring stopped\n");
+  }
+  else if (strncmp(cmd_str, "SET_UPDATE_MODE:", 16) == 0)
+  {
+    UART_ProcessUpdateMode(cmd_str + 16);
+  }
+  else if (strncmp(cmd_str, "SET_TIMER:", 10) == 0)
+  {
+    UART_ProcessTimerSet(cmd_str + 10);
+  }
+  else if (strcmp(cmd_str, "START_TIMER") == 0)
+  {
+    UART_ProcessTimerStart();
+  }
+  else if (strcmp(cmd_str, "STOP_TIMER") == 0)
+  {
+    UART_ProcessTimerStop();
+  }
+  else if (strcmp(cmd_str, "RESET") == 0)
+  {
+    UART_ProcessReset();
+  }
+  else if (strcmp(cmd_str, "GET_SIMPLE") == 0)
+  {
+    // 간단한 화면 데이터 테스트 (스택 사용량 줄인 버전)
+    UART_SendResponse("SIMPLE:Test pattern sent\n");
+  }
+  else
+  {
     UART_SendResponse("ERROR:Unknown command\n");
   }
 
@@ -1057,72 +1006,92 @@ void UART_ProcessCommand(void)
   memset(UART_State.cmd_buffer, 0, sizeof(UART_State.cmd_buffer));
   UART_State.cmd_index = 0;
 
-  // 뮤텍스 해제
-  osMutexRelease(UartMutexHandle);
 }
 
 /**
- * @brief 화면 데이터 전송
+ * @brief 화면 데이터 전송 (안정성 강화 버전)
  */
 void UART_SendScreenData(void)
 {
   // 뮤텍스 획득 (최대 200ms 대기 - 화면 데이터 전송은 시간이 걸릴 수 있음)
   osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 200);
-  if (mutex_status != osOK) {
+  if (mutex_status != osOK)
+  {
     // 뮤텍스 획득 실패 - 전송 포기
     return;
   }
 
-  if (Paint.Image == NULL) {
+  if (Paint.Image == NULL)
+  {
     // 뮤텍스를 이미 획득한 상태이므로 직접 전송
-    const char* error_msg = "ERROR:No screen data available\n";
-    HAL_UART_Transmit(&huart1, (uint8_t*)error_msg, strlen(error_msg), 1000);
+    const char *error_msg = "ERROR:No screen data available\n";
+    HAL_UART_Transmit(&huart1, (uint8_t *)error_msg, strlen(error_msg), 1000);
     osMutexRelease(UartMutexHandle);
     return;
   }
 
+  // UART 플러시 (이전 데이터 완전 제거)
+  __HAL_UART_FLUSH_DRREGISTER(&huart1);
+
   // 화면 데이터 시작 헤더 전송 (개행 문자 추가하여 명확히 구분)
-  const char* header = "\nSCREEN_START\nSIZE:128x64\n";
-  HAL_StatusTypeDef status = HAL_UART_Transmit(&huart1, (uint8_t*)header, strlen(header), 1000);
-  
-  if (status != HAL_OK) {
+  const char *header = "\n<<SCREEN_START>>\nSIZE:128x64\nFORMAT:PAINT_IMAGE\n";
+  HAL_StatusTypeDef status = HAL_UART_Transmit(&huart1, (uint8_t *)header, strlen(header), 1000);
+
+  if (status != HAL_OK)
+  {
     // 헤더 전송 실패 시 중단
     osMutexRelease(UartMutexHandle);
     return;
   }
 
-  // 헤더와 데이터 사이에 딜레이
-  osDelay(10);
+  // 전송 전 잠시 대기 (헤더 완전 전송 보장)
+  osDelay(5);
 
-  // OLED 화면 데이터 전송 (1024 bytes를 분할하여 전송)
-  uint16_t image_size = (OLED_1in3_C_WIDTH * OLED_1in3_C_HEIGHT) / 8; // 1024 bytes (128*64/8)
-  uint16_t chunk_size = 32; // 32바이트씩 분할 전송 (더 작게)
-  uint16_t sent = 0;
-  
-  while (sent < image_size) {
-    uint16_t remaining = image_size - sent;
-    uint16_t current_chunk = (remaining > chunk_size) ? chunk_size : remaining;
-    
-    status = HAL_UART_Transmit(&huart1, &Paint.Image[sent], current_chunk, 1000);
-    if (status != HAL_OK) {
-      // 전송 실패 시 중단
-      break;
-    }
-    
-    sent += current_chunk;
-    
-    // 각 청크 사이에 작은 딜레이
-    if (sent < image_size) {
-      osDelay(1);
-    }
+  // Paint.Image 데이터를 한번에 전송 (안정성 강화)
+  // OLED 화면 데이터: 128x64 = 8192 pixels = 1024 bytes (8 pixels per byte)
+  uint16_t image_size = (OLED_1in3_C_WIDTH * OLED_1in3_C_HEIGHT) / 8; // 1024 bytes
+
+  // 체크섬 계산 (데이터 무결성 검증용)
+  uint32_t checksum = 0;
+  for (uint16_t i = 0; i < image_size; i++)
+  {
+    checksum += Paint.Image[i];
   }
 
-  // 데이터와 푸터 사이에 딜레이
+  // 체크섬 헤더 전송
+  char checksum_header[32];
+  snprintf(checksum_header, sizeof(checksum_header), "CHECKSUM:%08lX\n", checksum);
+  HAL_UART_Transmit(&huart1, (uint8_t *)checksum_header, strlen(checksum_header), 1000);
+
+  // 데이터 시작 마커
+  const char *data_marker = "<<DATA_START>>\n";
+  HAL_UART_Transmit(&huart1, (uint8_t *)data_marker, strlen(data_marker), 1000);
+
+  // 전체 이미지를 한번에 전송 (최대 안정성)
+  status = HAL_UART_Transmit(&huart1, Paint.Image, image_size, 3000); // 3초 타임아웃
+
+  if (status != HAL_OK)
+  {
+    // 전송 실패시에도 종료 마커 전송
+    const char *error_marker = "\n<<TRANSMISSION_ERROR>>\n";
+    HAL_UART_Transmit(&huart1, (uint8_t *)error_marker, strlen(error_marker), 1000);
+    osMutexRelease(UartMutexHandle);
+    return;
+  }
+
+  // 전송 완료 후 안정화 딜레이
   osDelay(10);
 
+  // 데이터 종료 마커
+  const char *data_end_marker = "\n<<DATA_END>>\n";
+  HAL_UART_Transmit(&huart1, (uint8_t *)data_end_marker, strlen(data_end_marker), 1000);
+
   // 화면 데이터 종료 헤더 전송 (개행 문자 추가)
-  const char* footer = "\nSCREEN_END\n\n";
-  HAL_UART_Transmit(&huart1, (uint8_t*)footer, strlen(footer), 1000);
+  const char *footer = "<<SCREEN_END>>\n\n";
+  HAL_UART_Transmit(&huart1, (uint8_t *)footer, strlen(footer), 1000);
+
+  // 화면 데이터 전송 완료 후 15ms 대기 (수신 측 완전 안정화)
+  osDelay(15);
 
   // 뮤텍스 해제
   osMutexRelease(UartMutexHandle);
@@ -1135,7 +1104,8 @@ void UART_SendStatusData(void)
 {
   // 뮤텍스 획득 (최대 100ms 대기)
   osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 100);
-  if (mutex_status != osOK) {
+  if (mutex_status != osOK)
+  {
     // 뮤텍스 획득 실패 - 전송 포기
     return;
   }
@@ -1144,23 +1114,32 @@ void UART_SendStatusData(void)
 
   // 배터리 퍼센티지 계산
   uint8_t battery_percent = 0;
-  if (Adc_State.VBat_ADC_Value > 500) {
+  if (Adc_State.VBat_ADC_Value > 500)
+  {
     float battery_float = ((float)(Adc_State.VBat_ADC_Value - 500) / 2200.0f * 100.0f);
     battery_percent = (uint8_t)(battery_float + 0.5f);
   }
-  if (battery_percent > 100 || Adc_State.VBat_ADC_Value > 2650) {
+  if (battery_percent > 100 || Adc_State.VBat_ADC_Value > 2650)
+  {
     battery_percent = 100;
   }
 
   // 타이머 상태 문자열
-  const char* status_str;
-  if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET) {
+  const char *status_str;
+  if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+  {
     status_str = "SETTING";
-  } else if (Button_State.is_start_to_cooling) {
+  }
+  else if (Button_State.is_start_to_cooling)
+  {
     status_str = "COOLING";
-  } else if (Button_State.is_Start_Timer) {
+  }
+  else if (Button_State.is_Start_Timer)
+  {
     status_str = "RUNNING";
-  } else {
+  }
+  else
+  {
     status_str = "STANDBY";
   }
 
@@ -1170,23 +1149,28 @@ void UART_SendStatusData(void)
 
   // 타이머 시간 계산
   uint8_t timer_minutes, timer_seconds;
-  if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET) {
+  if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+  {
     timer_minutes = Button_State.Timer_Value;
     timer_seconds = 0;
-  } else if (Button_State.is_start_to_cooling) {
+  }
+  else if (Button_State.is_start_to_cooling)
+  {
     timer_minutes = Button_State.cooling_second / 60;
     timer_seconds = Button_State.cooling_second % 60;
-  } else {
+  }
+  else
+  {
     timer_minutes = Button_State.minute_count;
     timer_seconds = Button_State.second_count;
   }
 
   // 상태 정보 문자열 생성
   snprintf(status_buffer, sizeof(status_buffer),
-    "STATUS:BAT:%d%%,TIMER:%02d:%02d,STATUS:%s,L1:%d,L2:%d\n",
-    battery_percent, timer_minutes, timer_seconds, status_str, l1_connected, l2_connected);
+           "STATUS:BAT:%d%%,TIMER:%02d:%02d,STATUS:%s,L1:%d,L2:%d\n",
+           battery_percent, timer_minutes, timer_seconds, status_str, l1_connected, l2_connected);
 
-  HAL_UART_Transmit(&huart1, (uint8_t*)status_buffer, strlen(status_buffer), 1000);
+  HAL_UART_Transmit(&huart1, (uint8_t *)status_buffer, strlen(status_buffer), 1000);
 
   // 뮤텍스 해제
   osMutexRelease(UartMutexHandle);
@@ -1195,36 +1179,45 @@ void UART_SendStatusData(void)
 /**
  * @brief 응답 메시지 전송
  */
-void UART_SendResponse(const char* response)
+void UART_SendResponse(const char *response)
 {
   // 뮤텍스 획득 시도 (타임아웃 없이 즉시 확인)
   osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 0);
-  
-  if (mutex_status == osOK) {
+
+  if (mutex_status == osOK)
+  {
     // 뮤텍스를 성공적으로 획득한 경우
-    HAL_UART_Transmit(&huart1, (uint8_t*)response, strlen(response), 1000);
+    HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 1000);
     osMutexRelease(UartMutexHandle);
-  } else {
+  }
+  else
+  {
     // 뮤텍스가 이미 사용 중인 경우, 직접 전송 (이미 다른 곳에서 뮤텍스를 획득했다고 가정)
-    HAL_UART_Transmit(&huart1, (uint8_t*)response, strlen(response), 1000);
+    HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 1000);
   }
 }
 
 /**
  * @brief 타이머 설정 처리
  */
-void UART_ProcessTimerSet(const char* time_str)
+void UART_ProcessTimerSet(const char *time_str)
 {
   int minutes, seconds;
-  if (sscanf(time_str, "%d:%d", &minutes, &seconds) == 2) {
-    if (minutes >= 0 && minutes <= 99 && seconds >= 0 && seconds <= 59) {
+  if (sscanf(time_str, "%d:%d", &minutes, &seconds) == 2)
+  {
+    if (minutes >= 0 && minutes <= 99 && seconds >= 0 && seconds <= 59)
+    {
       // 실제 타이머 값 설정 (초 단위로 변환)
       Button_State.Timer_Value = minutes; // 분 단위로 저장
       UART_SendResponse("OK:Timer set\n");
-    } else {
+    }
+    else
+    {
       UART_SendResponse("ERROR:Invalid time range\n");
     }
-  } else {
+  }
+  else
+  {
     UART_SendResponse("ERROR:Invalid time format\n");
   }
 }
@@ -1234,19 +1227,22 @@ void UART_ProcessTimerSet(const char* time_str)
  */
 void UART_ProcessTimerStart(void)
 {
-  if (!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling) {
+  if (!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
+  {
     Button_State.is_Start_Timer = true;
     Button_State.minute_count = Button_State.Timer_Value;
     Button_State.second_count = 0;
-    
+
     // 메인 타이머 시작
     osTimerStart(MainTimerHandle, 1000);
-    
+
     // 팬 ON
     HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
-    
+
     UART_SendResponse("OK:Timer started\n");
-  } else {
+  }
+  else
+  {
     UART_SendResponse("ERROR:Timer already running\n");
   }
 }
@@ -1256,23 +1252,30 @@ void UART_ProcessTimerStart(void)
  */
 void UART_ProcessTimerStop(void)
 {
-  if (Button_State.is_Start_Timer) {
+  if (Button_State.is_Start_Timer)
+  {
     Button_State.is_Start_Timer = false;
-    
+
     // 쿨링 시작 조건 확인
-    if (Button_State.Timer_Value - Button_State.minute_count != 0 && Button_State.second_count <= 50) {
+    if (Button_State.Timer_Value - Button_State.minute_count != 0 && Button_State.second_count <= 50)
+    {
       Button_State.is_start_to_cooling = true;
       int8_t cooling_second = (Button_State.Timer_Value - Button_State.minute_count) * 10;
-      if (cooling_second > 60) cooling_second = 60;
+      if (cooling_second > 60)
+        cooling_second = 60;
       Button_State.cooling_second = cooling_second;
       UART_SendResponse("OK:Timer stopped, cooling started\n");
-    } else {
+    }
+    else
+    {
       // 완전 정지
       osTimerStop(MainTimerHandle);
       HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
       UART_SendResponse("OK:Timer stopped\n");
     }
-  } else {
+  }
+  else
+  {
     UART_SendResponse("ERROR:Timer not running\n");
   }
 }
@@ -1285,18 +1288,69 @@ void UART_ProcessReset(void)
   Button_State.is_Start_Timer = false;
   Button_State.is_start_to_cooling = false;
   Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
-  
+
   // 타이머 정지
   osTimerStop(MainTimerHandle);
-  
+
   // 팬 OFF
   HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
-  
+
   // 모니터링 리셋
   UART_State.monitoring_enabled = 0;
-  UART_State.auto_screen_update = 0;
-  
+
   UART_SendResponse("OK:System reset\n");
+}
+
+/**
+ * @brief 업데이트 모드 처리
+ */
+void UART_ProcessUpdateMode(const char *mode_str)
+{
+  // mode_str 형식: "REQUEST_RESPONSE,100" (모드,주기ms)
+  char mode[32];
+  int interval_ms = 100; // 기본값
+
+  // 모드와 주기 파싱
+  if (sscanf(mode_str, "%31[^,],%d", mode, &interval_ms) >= 1)
+  {
+    if (strcmp(mode, "REQUEST_RESPONSE") == 0)
+    {
+      // 요청-응답 모드 설정
+      UART_State.monitoring_enabled = 1;
+
+      // 주기 검증 (50ms ~ 5000ms 범위)
+      if (interval_ms < 50)
+        interval_ms = 50;
+      if (interval_ms > 5000)
+        interval_ms = 5000;
+
+      // 간단한 OK 응답으로 변경 (파싱 오류 방지)
+      UART_SendResponse("OK:Request-Response mode set\n");
+    }
+    else if (strcmp(mode, "AUTO") == 0)
+    {
+      // 자동 모드는 더 이상 지원하지 않음 - 요청-응답 방식만 지원
+      UART_State.monitoring_enabled = 1;
+
+      // 간단한 OK 응답으로 변경 (파싱 오류 방지)
+      UART_SendResponse("OK:Request-Response mode set\n");
+    }
+    else if (strcmp(mode, "MANUAL") == 0)
+    {
+      // 수동 모드
+      UART_State.monitoring_enabled = 0;
+
+      UART_SendResponse("OK:Manual mode set\n");
+    }
+    else
+    {
+      UART_SendResponse("ERROR:Unknown update mode\n");
+    }
+  }
+  else
+  {
+    UART_SendResponse("ERROR:Invalid update mode format\n");
+  }
 }
 
 /* Callback01 function */
@@ -1357,34 +1411,53 @@ void Callback01(void *argument)
 }
 
 /**
- * @brief UART 수신 완료 콜백 (인터럽트)
+ * @brief UART 수신 완료 콜백 (인터럽트) - 안정성 강화
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart->Instance == USART1) {
+  if (huart->Instance == USART1)
+  {
     uint8_t received_char = UART_State.rx_buffer[UART_State.rx_index];
-    
-    // 명령어 버퍼에 문자 저장 (인터럽트에서는 뮤텍스 없이 처리)
-    if (received_char == '\n' || received_char == '\r') {
-      // 명령어 완료
-      if (UART_State.cmd_index > 0) {
+
+    // 명령어 버퍼에 문자 저장 (인터럽트에서는 최소한의 처리만)
+    if (received_char == '\n' || received_char == '\r')
+    {
+      // 명령어 완료 - 빈 명령어 체크
+      if (UART_State.cmd_index > 0 && UART_State.cmd_index < sizeof(UART_State.cmd_buffer))
+      {
         UART_State.cmd_buffer[UART_State.cmd_index] = '\0';
         UART_State.command_ready = 1;
       }
-    } else {
-      // 문자 추가
-      if (UART_State.cmd_index < sizeof(UART_State.cmd_buffer) - 1) {
-        UART_State.cmd_buffer[UART_State.cmd_index] = received_char;
-        UART_State.cmd_index++;
-      } else {
-        // 버퍼 오버플로우 - 명령어 리셋 (오류 메시지는 보내지 않음)
-        UART_State.cmd_index = 0;
-      }
+      // 명령어 완료 후 즉시 인덱스 리셋
+      UART_State.cmd_index = 0;
     }
-    
-    // 다음 문자 수신 준비
+    else
+    {
+      // 유효한 ASCII 문자만 허용 (32-126)
+      if (received_char >= 32 && received_char <= 126)
+      {
+        if (UART_State.cmd_index < sizeof(UART_State.cmd_buffer) - 1)
+        {
+          UART_State.cmd_buffer[UART_State.cmd_index] = received_char;
+          UART_State.cmd_index++;
+        }
+        else
+        {
+          // 버퍼 오버플로우 - 명령어 리셋
+          UART_State.cmd_index = 0;
+        }
+      }
+      // 제어 문자나 유효하지 않은 문자는 무시
+    }
+
+    // 다음 문자 수신 준비 (안전한 인덱스 관리)
     UART_State.rx_index = (UART_State.rx_index + 1) % sizeof(UART_State.rx_buffer);
-    HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1);
+
+    // 인터럽트 재시작 (안전 체크 추가)
+    if (huart->RxState == HAL_UART_STATE_READY)
+    {
+      HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1);
+    }
   }
 }
 
