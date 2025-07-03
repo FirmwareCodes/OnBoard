@@ -30,6 +30,7 @@
 #include <math.h>
 #include "../../App/Common/Inc/OLED/UI_Layout.h"
 #include "../../App/Common/Inc/OLED/DEV_Config.h"
+#include "flash_storage.h"
 
 /* USER CODE END Includes */
 
@@ -107,7 +108,7 @@ Adc_t Adc_State = {
 };
 
 Button_t Button_State = {
-    .Timer_Value = 10,                            // 타이머 초기값
+    .Timer_Value = 10,                            // 타이머 초기값 (플래시에서 로드될 예정)
     .Timer_Set_Start_Time = 0,                    // TIMER_SET 상태 비활성화 시간
     .second_count = 0,                            // 타이머 초 카운트
     .minute_count = 0,                            // 타이머 분 카운트
@@ -132,6 +133,50 @@ Button_t Button_State = {
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
+/**
+ * @brief  플래시에서 타이머 값을 불러와 Button_State에 설정합니다
+ * @retval None
+ */
+void Timer_LoadFromFlash(void)
+{
+    uint32_t timer_value = 0;
+    HAL_StatusTypeDef status = Flash_ReadTimerValue(&timer_value);
+    
+    if (status == HAL_OK)
+    {
+        // 유효한 범위 확인 (1초 ~ 255초)
+        if (timer_value >= 1 && timer_value <= 255)
+        {
+            Button_State.Timer_Value = (uint8_t)timer_value;
+        }
+        else
+        {
+            // 범위를 벗어나는 경우 기본값 설정
+            Button_State.Timer_Value = 10;
+        }
+    }
+    else
+    {
+        // 플래시에서 읽기 실패 시 기본값 설정
+        Button_State.Timer_Value = 10;
+    }
+}
+
+/**
+ * @brief  타이머 값을 플래시에 저장합니다
+ * @param  timer_value: 저장할 타이머 값 (초 단위)
+ * @retval None
+ */
+void Timer_SaveToFlash(uint32_t timer_value)
+{
+    HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
+    
+    if (status != HAL_OK)
+    {
+    
+    }
+}
+
 /* USER CODE END Application */
 
 void RTOS_Start(void)
@@ -152,6 +197,10 @@ void RTOS_Start(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
+  
+  // 플래시에서 타이머 값 로드
+  Timer_LoadFromFlash();
+  
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -198,12 +247,24 @@ void RTOS_Start(void)
   /* Create the event(s) */
   /* creation of MainStatusEvent */
   MainStatusEventHandle = osEventFlagsNew(&MainStatusEvent_attributes);
+
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
   osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
 }
 
 /* USER CODE BEGIN Header_StartOneSecondTask */
@@ -697,6 +758,10 @@ void StartButtonTask(void *argument)
             {
               Button_State.Timer_Value = 2; // 10을 넘으면 1부터 다시 시작
             }
+            
+            // 타이머 값이 변경되었으므로 플래시에 저장
+            Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
+            
             // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
             Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
           }
@@ -723,6 +788,9 @@ void StartButtonTask(void *argument)
         // TIMER_SET에서 1.5초 이상 누르면 STANDBY로 복귀
         Button_State.is_pushed_changed = true;
         Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
+        
+        // TIMER_SET 모드를 나갈 때 현재 타이머 값을 플래시에 저장
+        Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
       }
     }
 
@@ -732,6 +800,9 @@ void StartButtonTask(void *argument)
       if ((Button_State.Button_Current_Time - Button_State.Timer_Set_Start_Time) >= (5000 / portTICK_PERIOD_MS))
       {
         Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
+        
+        // 5초 비활성화로 TIMER_SET 모드를 나갈 때도 플래시에 저장
+        Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
       }
     }
 
