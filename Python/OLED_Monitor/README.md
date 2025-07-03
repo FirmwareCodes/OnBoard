@@ -1,4 +1,4 @@
-# OnBoard OLED Monitor v1.4 - Request-Response Protocol
+# OnBoard OLED Monitor v1.4 - Request-Response Protocol with RAW Data Logging
 
 STM32 OnBoard LED Timer의 1.3" OLED 디스플레이를 실시간으로 모니터링하는 도구입니다.
 
@@ -9,6 +9,12 @@ STM32 OnBoard LED Timer의 1.3" OLED 디스플레이를 실시간으로 모니�
 - **모니터링 도구**: 사용자 설정 주기마다 GET_SCREEN 명령 전송
 - **효율성**: CPU 사용률 최적화, 데이터 충돌 방지
 
+### RAW 데이터 로깅 시스템 🔍
+- **완전한 데이터 보존**: 파싱 전 원본 데이터 모두 기록
+- **이중 로그 시스템**: 상태 로그 + RAW 데이터 전용 로그
+- **디버깅 지원**: 통신 오류 시 정확한 원인 분석 가능
+- **HEX 형식 저장**: 바이너리 데이터의 정확한 기록
+
 ### 지원 명령어
 - `GET_SCREEN`: 화면 데이터 요청
 - `GET_STATUS`: 상태 정보 요청  
@@ -18,22 +24,67 @@ STM32 OnBoard LED Timer의 1.3" OLED 디스플레이를 실시간으로 모니�
 
 ## 🔧 설치 및 실행
 
+### 실행 방법 (권장 순서)
+
+#### 방법 1: 자동 실행기 (권장)
+```bash
+run_monitor.bat
+```
+- 가상환경 자동 생성 및 패키지 자동 설치
+- 완전 자동화된 실행 환경 구성
+
+#### 방법 2: 간단 실행기 (문제시 사용)
+```bash
+run_monitor_simple.bat
+```
+- 기본 기능만 포함한 간소화된 버전
+- 메인 스크립트에 문제가 있을 때 사용
+
+#### 방법 3: 직접 실행 (비상용)
+```bash
+run_direct.bat
+```
+- 가상환경 없이 시스템 Python 직접 사용
+- 가상환경 생성에 문제가 있을 때 사용
+
 ### 요구사항
 ```bash
 pip install -r requirements.txt
 ```
 
-### 실행
-```bash
-# Windows
-run_monitor.bat
+## 📊 로그 시스템
 
-# Linux/Mac
-./run_monitor.sh
-
-# 직접 실행
-python oled_monitor.py
+### 로그 파일 구조
 ```
+LOG/
+├── status_log_YYYYMMDD.txt      # 상태 정보 종합 로그
+└── raw_data_log_YYYYMMDD.txt    # RAW 데이터 전용 로그
+```
+
+### 상태 로그 형식 (status_log_YYYYMMDD.txt)
+```
+시간            배터리  타이머    상태      L1   L2   비고        RAW 데이터
+14:30:25.123    85%    05:30    RUNNING   연결  해제  firmware    STATUS:BAT:85%,TIMER:05:30...
+14:30:26.456    84%    05:29    RUNNING   연결  해제  firmware    STATUS:BAT:84%,TIMER:05:29...
+14:30:27.789    [SCREEN_CAPTURE_SUCCESS] 화면 캡처 성공 (1024 bytes) [RAW: 100bytes]
+```
+
+### RAW 데이터 로그 형식 (raw_data_log_YYYYMMDD.txt)
+```
+시간            데이터 타입       길이    RAW 데이터 (HEX)
+14:30:25.123    STATUS           45      5354415455533A4241543A38352...
+14:30:26.456    SCREEN_CAPTURE   1024    3C3C534352454E5F535441525...
+14:30:27.789    EVENT_CONNECT    25      504F52543A434F4D332C424155...
+```
+
+### 로그 이벤트 타입
+- **STATUS**: 상태 데이터 파싱 결과
+- **SCREEN_CAPTURE_SUCCESS/FAIL**: 화면 캡처 성공/실패
+- **EVENT_CONNECT**: 연결 이벤트
+- **EVENT_DISCONNECT**: 연결 해제
+- **SERIAL_ERROR**: 시리얼 통신 오류
+- **PARSING_FAILED**: 데이터 파싱 실패
+- **SIZE_MISMATCH**: 데이터 크기 불일치
 
 ## 🎮 사용법
 
@@ -63,37 +114,8 @@ python oled_monitor.py
                 ↓
 펌웨어: 요청시에만 화면 데이터 응답
                 ↓
-도구: 화면 표시 및 성능 통계 업데이트
+도구: 화면 표시 + RAW 데이터 로그 기록
 ```
-
-## 📊 성능 특징
-
-### FPS 및 성공률 모니터링
-- **FPS**: 실제 화면 갱신 속도
-- **성공률**: 요청 대비 성공적인 응답 비율
-- **실시간 통계**: 상단에 표시
-
-### CPU 최적화
-- **수동 모드**: CPU 사용량 최소화
-- **자동 모드**: 설정된 주기에 따른 효율적 요청
-- **실패 감지**: 연속 실패시 자동 복구
-
-## 🛠️ 문제 해결
-
-### 연결 문제
-1. **포트 확인**: 디바이스 관리자에서 COM 포트 확인
-2. **보드레이트**: 921600으로 설정
-3. **펌웨어**: v1.4 Request-Response Protocol 지원 필요
-
-### 화면 캡처 실패
-1. **갱신 주기**: 50ms 이상으로 설정
-2. **자동 요청**: 체크박스 활성화 확인
-3. **버퍼 클리어**: 연결 해제 후 재연결
-
-### 성능 문제
-1. **주기 조절**: 더 긴 간격으로 설정 (100ms~200ms)
-2. **수동 모드**: 자동 요청 비활성화
-3. **선택적 모니터링**: 필요할 때만 시작
 
 ## 📋 지원 기능
 
@@ -101,8 +123,15 @@ python oled_monitor.py
 - ✅ 요청-응답 기반 화면 캡처
 - ✅ 사용자 정의 갱신 주기 (50ms~2000ms)
 - ✅ 실시간 성능 통계
-- ✅ 화면 저장 (PNG)
+- ✅ 화면 저장 (PNG, 고해상도 지원)
 - ✅ 상태 정보 모니터링
+
+### RAW 데이터 로깅
+- ✅ 파싱 전 원본 데이터 완전 보존
+- ✅ HEX 형식 정확한 기록
+- ✅ 통신 오류 완전 추적
+- ✅ 디버깅 정보 상세 기록
+- ✅ 이벤트별 RAW 데이터 분류
 
 ### 원격 제어
 - ✅ 타이머 시작/중지
@@ -116,40 +145,72 @@ python oled_monitor.py
 - ✅ 세션 기록
 - ✅ 로그 시스템 (중복 방지)
 
-## 🔄 프로토콜 상세
+## 🔍 RAW 데이터 분석
 
-### 요청-응답 방식
+### HEX 데이터 해석 예시
 ```
-모니터링 도구 → GET_SCREEN → 펌웨어
-모니터링 도구 ← 화면 데이터 ← 펌웨어
-```
+5354415455533A4241543A38352C54494D45523A30353A33302C5354415455533A52554E4E494E472C4C313A312C4C323A30
 
-### 데이터 형식
-```
-<<SCREEN_START>>
-SIZE:128x64
-FORMAT:PAINT_IMAGE
-CHECKSUM:12345678
-<<DATA_START>>
-[1024 bytes of screen data]
-<<DATA_END>>
-<<SCREEN_END>>
+ASCII 변환: STATUS:BAT:85,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0
 ```
 
-### 안정성 기능
-- ✅ 체크섬 검증
-- ✅ 마커 기반 데이터 구분
-- ✅ 전송 오류 감지
-- ✅ 타임아웃 처리
+### 통신 오류 분석
+```
+# 불완전한 데이터 수신
+3C3C534352454E5F535441525...  (<<SCREEN_START 시작)
+# → SCREEN_END 마커 누락 확인 가능
 
-## 📝 변경사항 (v1.4)
+# 체크섬 불일치
+예상: CHECKSUM:ABCD1234
+실제: CHECKSUM:EFGH5678
+# → 데이터 손상 정확히 추적
+```
+
+### 로그 활용 방법
+1. **성능 분석**: 성공률, 응답 시간 통계
+2. **오류 진단**: 통신 실패 원인 분석  
+3. **데이터 복구**: 손상된 패킷 복구 시도
+4. **프로토콜 검증**: 펌웨어-PC 간 통신 정확성 확인
+
+## 🛠️ 문제 해결
+
+### 자주 발생하는 문제들
+
+#### 1. Python import 오류
+```
+'import' is not recognized as an internal or external command
+```
+
+**해결방법:**
+1. `run_monitor_simple.bat` 사용
+2. Python PATH 설정 확인
+3. 관리자 권한으로 실행
+
+#### 2. RAW 데이터 로그 파일 크기 증가
+- **정상**: 하루 10-50MB (일반 사용)
+- **주의**: 100MB 이상 (빈번한 오류 발생)
+- **해결**: 로그 파일 주기적 정리 또는 압축
+
+#### 3. 통신 오류 빈발
+1. **로그 확인**: `raw_data_log_YYYYMMDD.txt`에서 오류 패턴 분석
+2. **케이블 점검**: USB 케이블 및 연결 상태
+3. **보드레이트**: 921600에서 115200으로 변경 시도
+
+## 🔄 업데이트 내용 (v1.4)
 
 ### 주요 개선
 - 🔄 **요청-응답 프로토콜**: 펌웨어 자동 전송 제거
+- 🔍 **RAW 데이터 로깅**: 완전한 통신 데이터 보존
 - ⚡ **CPU 최적화**: 효율적인 요청 스케줄링
 - 📊 **성능 통계**: 실시간 FPS 및 성공률 표시
 - 🛡️ **안정성 강화**: 연속 실패 감지 및 복구
 - 🎛️ **사용자 제어**: 갱신 주기 실시간 조절
+
+### 로깅 시스템 강화
+- **이중 로그**: 상태 + RAW 데이터 분리 기록
+- **HEX 형식**: 바이너리 데이터 정확한 보존
+- **이벤트 분류**: 연결, 오류, 성공 등 상세 분류
+- **디버깅 지원**: 모든 통신 과정 완전 추적
 
 ### 호환성
 - ✅ 펌웨어 v1.4 이상 필요
@@ -159,5 +220,5 @@ CHECKSUM:12345678
 ---
 
 **Author**: OnBoard LED Timer Project  
-**Version**: 1.4 - Request-Response Protocol  
+**Version**: 1.4 - Request-Response Protocol with RAW Data Logging  
 **Date**: 2024-01-01 

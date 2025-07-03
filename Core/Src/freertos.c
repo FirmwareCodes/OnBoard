@@ -926,86 +926,97 @@ void StartUartTask(void *argument)
 }
 
 /**
- * @brief UART 명령어 처리 함수 (안정성 강화)
+ * @brief UART 명령어 처리 함수 (최적화 버전)
  */
 void UART_ProcessCommand(void)
 {
-
-  // 명령어 문자열 복사 (스택 변수 사용으로 안전성 향상)
-  char cmd_str[64]; // 스택 사용량 줄임 (128 -> 64)
-  strncpy(cmd_str, (char *)UART_State.cmd_buffer, sizeof(cmd_str) - 1);
-  cmd_str[sizeof(cmd_str) - 1] = '\0'; // 안전한 종료
-
-  // 개행 문자 제거
-  char *newline = strchr(cmd_str, '\n');
-  if (newline)
-    *newline = '\0';
-  newline = strchr(cmd_str, '\r');
-  if (newline)
-    *newline = '\0';
-
-  // 명령어 처리 (간단한 명령어 우선 처리로 빠른 응답)
-  if (strcmp(cmd_str, "PING") == 0)
-  {
-    UART_SendResponse("PONG\n");
+  // 명령어 문자열 최적화 (직접 참조로 성능 향상)
+  char *cmd_str = (char *)UART_State.cmd_buffer;
+  
+  // 빠른 길이 체크 (빈 명령어 즉시 거부)
+  if (UART_State.cmd_index == 0) {
+    UART_State.command_ready = 0;
+    return;
   }
-  else if (strcmp(cmd_str, "TEST") == 0)
-  {
-    UART_SendResponse("TEST:OK\n");
+  
+  // NULL 종료 보장
+  UART_State.cmd_buffer[UART_State.cmd_index] = '\0';
+  
+  // 개행 문자 제거 (최적화된 방식)
+  for (int i = UART_State.cmd_index - 1; i >= 0; i--) {
+    if (cmd_str[i] == '\n' || cmd_str[i] == '\r' || cmd_str[i] == ' ') {
+      cmd_str[i] = '\0';
+      UART_State.cmd_index = i;
+    } else {
+      break;
+    }
   }
-  else if (strcmp(cmd_str, "GET_STATUS") == 0)
-  {
-    UART_SendStatusData();
+
+  // 명령어 길이 재확인
+  if (UART_State.cmd_index == 0) {
+    UART_State.command_ready = 0;
+    return;
   }
-  else if (strcmp(cmd_str, "GET_SCREEN") == 0)
+
+  // 명령어 처리 (빈도 높은 명령어 우선 처리)
+  if (memcmp(cmd_str, "GET_SCREEN", 10) == 0 && UART_State.cmd_index == 10)
   {
     UART_SendScreenData();
   }
-  else if (strcmp(cmd_str, "START_MONITOR") == 0)
+  else if (memcmp(cmd_str, "GET_STATUS", 10) == 0 && UART_State.cmd_index == 10)
   {
-    // 요청-응답 모드로 모니터링 시작 (자동 전송 없음)
+    UART_SendStatusData();
+  }
+  else if (memcmp(cmd_str, "PING", 4) == 0 && UART_State.cmd_index == 4)
+  {
+    UART_SendResponse("PONG\n");
+  }
+  else if (memcmp(cmd_str, "TEST", 4) == 0 && UART_State.cmd_index == 4)
+  {
+    UART_SendResponse("TEST:OK\n");
+  }
+  else if (memcmp(cmd_str, "START_MONITOR", 13) == 0 && UART_State.cmd_index == 13)
+  {
     UART_State.monitoring_enabled = 1;
     UART_SendResponse("OK:Monitoring started\n");
   }
-  else if (strcmp(cmd_str, "STOP_MONITOR") == 0)
+  else if (memcmp(cmd_str, "STOP_MONITOR", 12) == 0 && UART_State.cmd_index == 12)
   {
     UART_State.monitoring_enabled = 0;
     UART_SendResponse("OK:Monitoring stopped\n");
   }
-  else if (strncmp(cmd_str, "SET_UPDATE_MODE:", 16) == 0)
+  else if (memcmp(cmd_str, "SET_UPDATE_MODE:", 16) == 0 && UART_State.cmd_index > 16)
   {
     UART_ProcessUpdateMode(cmd_str + 16);
   }
-  else if (strncmp(cmd_str, "SET_TIMER:", 10) == 0)
+  else if (memcmp(cmd_str, "SET_TIMER:", 10) == 0 && UART_State.cmd_index > 10)
   {
     UART_ProcessTimerSet(cmd_str + 10);
   }
-  else if (strcmp(cmd_str, "START_TIMER") == 0)
+  else if (memcmp(cmd_str, "START_TIMER", 11) == 0 && UART_State.cmd_index == 11)
   {
     UART_ProcessTimerStart();
   }
-  else if (strcmp(cmd_str, "STOP_TIMER") == 0)
+  else if (memcmp(cmd_str, "STOP_TIMER", 10) == 0 && UART_State.cmd_index == 10)
   {
     UART_ProcessTimerStop();
   }
-  else if (strcmp(cmd_str, "RESET") == 0)
+  else if (memcmp(cmd_str, "RESET", 5) == 0 && UART_State.cmd_index == 5)
   {
     UART_ProcessReset();
   }
-  else if (strcmp(cmd_str, "GET_SIMPLE") == 0)
+  else if (memcmp(cmd_str, "GET_SIMPLE", 10) == 0 && UART_State.cmd_index == 10)
   {
-    // 간단한 화면 데이터 테스트 (스택 사용량 줄인 버전)
     UART_SendResponse("SIMPLE:Test pattern sent\n");
   }
   else
   {
-    UART_SendResponse("ERROR:Unknown command\n");
+    
   }
 
-  // 명령어 버퍼 초기화
-  memset(UART_State.cmd_buffer, 0, sizeof(UART_State.cmd_buffer));
+  // 명령어 버퍼 즉시 초기화 (성능 최적화)
   UART_State.cmd_index = 0;
-
+  UART_State.command_ready = 0;
 }
 
 /**
@@ -1177,24 +1188,13 @@ void UART_SendStatusData(void)
 }
 
 /**
- * @brief 응답 메시지 전송
+ * @brief 응답 메시지 전송 (최적화된 버전)
  */
 void UART_SendResponse(const char *response)
 {
-  // 뮤텍스 획득 시도 (타임아웃 없이 즉시 확인)
-  osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 0);
-
-  if (mutex_status == osOK)
-  {
-    // 뮤텍스를 성공적으로 획득한 경우
-    HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 1000);
-    osMutexRelease(UartMutexHandle);
-  }
-  else
-  {
-    // 뮤텍스가 이미 사용 중인 경우, 직접 전송 (이미 다른 곳에서 뮤텍스를 획득했다고 가정)
-    HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 1000);
-  }
+  // 뮤텍스 없이 직접 전송으로 응답성 최대화
+  // 짧은 응답 메시지는 충돌 위험이 낮음
+  HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 500);  // 타임아웃 단축
 }
 
 /**
@@ -1428,8 +1428,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         UART_State.cmd_buffer[UART_State.cmd_index] = '\0';
         UART_State.command_ready = 1;
       }
-      // 명령어 완료 후 즉시 인덱스 리셋
-      UART_State.cmd_index = 0;
     }
     else
     {

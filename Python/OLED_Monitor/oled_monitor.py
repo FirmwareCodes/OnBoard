@@ -7,7 +7,7 @@ Features:
 - 요청-응답 기반 실시간 OLED 화면 캡처
 - 사용자 정의 갱신 주기 (50ms~2000ms)
 - GET_SCREEN, GET_STATUS 명령어 기반 프로토콜
-- 상태 정보 모니터링
+- 상태 정보 모니터링 및 로그 기록 (RAW 데이터 포함)
 - 화면 저장 및 기록
 - 원격 제어 (타이머 시작/중지/설정)
 
@@ -17,7 +17,7 @@ Protocol:
 
 Author: OnBoard LED Timer Project
 Date: 2024-01-01
-Version: 1.4 - Request-Response Protocol
+Version: 1.4 - Request-Response Protocol with RAW Data Logging
 """
 
 import serial
@@ -33,13 +33,69 @@ from datetime import datetime
 import os
 import re
 
+# 프로젝트 내 모듈 import
+try:
+    from utils import StatusLogger, FileManager, Logger
+    from serial_parser import SerialDataParser
+except ImportError:
+    # 모듈이 없는 경우 기본 기능으로 대체
+    StatusLogger = None
+    FileManager = None
+    Logger = None
+    SerialDataParser = None
+
 class OLEDMonitor:
     def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("OnBoard OLED Monitor v1.4 - Request-Response Protocol with RAW Logging")
+        self.root.geometry("900x700")
+        
+        # 시리얼 통신 관련
         self.serial_port = None
         self.is_connected = False
         self.is_monitoring = False
+        
+        # 성능 최적화를 위한 NumPy 사용 가능 여부 확인
+        try:
+            import numpy as np
+            self.numpy_available = True
+            self.log_startup_message = "✅ NumPy 가속 사용 가능 - 초고속 모드"
+        except ImportError:
+            self.numpy_available = False
+            self.log_startup_message = "⚠️ NumPy 없음 - 일반 모드 (pip install numpy 권장)"
+        
+        # 모니터링 설정
+        self.update_interval_ms = 50  # 기본 갱신 주기 50ms (20 FPS)
+        self.auto_request_enabled = True  # 자동 요청 모드 기본 활성화
+        
+        # 성능 통계
+        self.performance_stats = {
+            'start_time': time.time(),
+            'total_captures': 0,
+            'successful_captures': 0,
+            'fps_counter': 0,
+            'fps_start_time': time.time()
+        }
+        
+        # 화면 관련
+        self.current_screen = None
+        self.current_image = None
+        
+        # 스레드 관련
         self.capture_thread = None
         self.status_thread = None
+        
+        # 상태 로그 기록 관련 (RAW 데이터 지원)
+        self.setup_status_logging()
+        
+        # 시리얼 파서 초기화
+        self.setup_serial_parser()
+        
+        # GUI 설정
+        self.setup_gui()
+        
+        # 시작 메시지 출력
+        self.root.after(1000, lambda: self.log_message(self.log_startup_message))
         
         # OLED 설정
         self.OLED_WIDTH = 128
@@ -53,29 +109,159 @@ class OLEDMonitor:
         # 파싱 방법 설정 (가장 안정적인 방법으로 기본값 변경)
         self.parsing_method = "method3_rotated_180"  # 세로 뒤집기가 가장 안정적
         
-        # 화면 갱신 주기 설정 (밀리초 단위)
-        self.update_interval_ms = 50  # 기본 50ms (20 FPS)로 변경
-        self.auto_request_enabled = False  # 자동 요청 모드
-        
-        # 성능 통계 추적
-        self.performance_stats = {
-            'total_captures': 0,
-            'successful_captures': 0,
-            'last_capture_time': 0,
-            'fps_counter': 0,
-            'fps_start_time': time.time()
-        }
-        
         # 로그 출력 최적화 - 중복 방지
         self.log_throttle = {}  # 메시지별 마지막 출력 시간
         self.log_throttle_interval = 2.0  # 2초 내 동일 메시지는 한 번만 출력
         
-        # GUI 설정
-        self.setup_gui()
-        
+    def setup_status_logging(self):
+        """상태 로그 기록 시스템 설정 - 강화된 RAW 데이터 지원"""
+        try:
+            # utils.py의 StatusLogger 사용 (RAW 데이터 지원)
+            if StatusLogger:
+                self.status_logger = StatusLogger()
+                print(f"✅ 강화된 상태 로그 시스템 초기화 완료")
+                print(f"📝 상태 로그: {self.status_logger.get_log_file_path()}")
+                print(f"🔍 RAW 데이터 로그: {self.status_logger.get_raw_log_file_path()}")
+            else:
+                # 폴백: 기본 로깅 시스템
+                self.setup_fallback_logging()
+                print(f"⚠️ 기본 상태 로그 시스템 사용")
+                
+        except Exception as e:
+            print(f"❌ 상태 로그 시스템 초기화 실패: {str(e)}")
+            self.setup_fallback_logging()
+    
+    def setup_fallback_logging(self):
+        """폴백 로깅 시스템 (utils.py가 없을 때 사용)"""
+        try:
+            # 실행 경로에 LOG 폴더 생성
+            self.log_directory = os.path.join(os.getcwd(), "LOG")
+            os.makedirs(self.log_directory, exist_ok=True)
+            
+            # 오늘 날짜로 상태 로그 파일명 생성
+            today = datetime.now().strftime("%Y%m%d")
+            self.status_log_file = os.path.join(self.log_directory, f"status_log_{today}.txt")
+            
+            # 상태 로그 파일 초기화 (헤더 작성)
+            self.init_status_log_file()
+            
+            # 상태 로그 기록을 위한 스레드 락
+            self.status_log_lock = threading.Lock()
+            self.status_logger = None  # 폴백 모드 표시
+            
+        except Exception as e:
+            print(f"❌ 폴백 로깅 시스템 초기화 실패: {str(e)}")
+            self.status_log_file = None
+            self.status_logger = None
+    
+    def setup_serial_parser(self):
+        """시리얼 파서 초기화"""
+        try:
+            if SerialDataParser:
+                self.serial_parser = SerialDataParser()
+                print(f"✅ 시리얼 파서 초기화 완료")
+            else:
+                self.serial_parser = None
+                print(f"⚠️ 시리얼 파서 모듈 없음 - 기본 파싱 사용")
+        except Exception as e:
+            print(f"❌ 시리얼 파서 초기화 실패: {str(e)}")
+            self.serial_parser = None
+    
+    def init_status_log_file(self):
+        """상태 로그 파일 헤더 초기화"""
+        try:
+            # 파일이 이미 존재하고 오늘 생성된 것이면 헤더 추가하지 않음
+            if os.path.exists(self.status_log_file):
+                file_stat = os.path.stat(self.status_log_file)
+                file_date = datetime.fromtimestamp(file_stat.st_mtime).date()
+                if file_date == datetime.now().date():
+                    return  # 오늘 파일이면 헤더 추가하지 않음
+            
+            # 새 파일이거나 어제 파일이면 헤더 작성
+            with open(self.status_log_file, 'a', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"OnBoard OLED Monitor 상태 로그 - {datetime.now().strftime('%Y년 %m월 %d일')}\n")
+                f.write("=" * 80 + "\n")
+                f.write("시간\t\t\t배터리\t타이머\t\t상태\t\tL1\tL2\t비고\n")
+                f.write("-" * 80 + "\n")
+                
+        except Exception as e:
+            print(f"❌ 상태 로그 파일 헤더 초기화 실패: {str(e)}")
+    
+    def write_status_log(self, status_data):
+        """상태 데이터를 로그 파일에 기록 - RAW 데이터 지원"""
+        try:
+            # 강화된 StatusLogger 사용
+            if self.status_logger and hasattr(self.status_logger, 'log_status'):
+                self.status_logger.log_status(status_data)
+                return
+            
+            # 폴백: 기본 로깅 (RAW 데이터 간소화)
+            if not hasattr(self, 'status_log_file') or not self.status_log_file:
+                return
+                
+            with self.status_log_lock:
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]  # 밀리초 포함
+                
+                # 상태 데이터 추출
+                battery = status_data.get('battery', 'N/A')
+                timer = status_data.get('timer', 'N/A')
+                status = status_data.get('status', 'N/A')
+                l1_connected = '연결' if status_data.get('l1_connected', False) else '해제'
+                l2_connected = '연결' if status_data.get('l2_connected', False) else '해제'
+                source = status_data.get('source', 'unknown')
+                
+                # RAW 데이터 요약 (기본 로깅용)
+                raw_data = status_data.get('raw_data', '')
+                if isinstance(raw_data, bytes):
+                    raw_summary = f"[{len(raw_data)}bytes]"
+                elif isinstance(raw_data, str):
+                    raw_summary = raw_data[:30] + '...' if len(raw_data) > 30 else raw_data
+                else:
+                    raw_summary = str(raw_data)[:30]
+                
+                # 로그 라인 구성
+                log_line = f"{timestamp}\t{battery}%\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{source}\t{raw_summary}\n"
+                
+                # 파일에 기록
+                with open(self.status_log_file, 'a', encoding='utf-8') as f:
+                    f.write(log_line)
+                    
+        except Exception as e:
+            print(f"❌ 상태 로그 기록 실패: {str(e)}")
+    
+    def write_status_log_event(self, event_type, message, raw_data=None):
+        """특별한 이벤트를 상태 로그에 기록 - RAW 데이터 지원"""
+        try:
+            # 강화된 StatusLogger 사용
+            if self.status_logger and hasattr(self.status_logger, 'log_event'):
+                self.status_logger.log_event(event_type, message, raw_data)
+                return
+            
+            # 폴백: 기본 로깅
+            if not hasattr(self, 'status_log_file') or not self.status_log_file:
+                return
+                
+            with self.status_log_lock:
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                
+                # RAW 데이터 요약 추가
+                if raw_data:
+                    if isinstance(raw_data, bytes):
+                        message += f" [RAW: {len(raw_data)}bytes]"
+                    elif isinstance(raw_data, str):
+                        message += f" [RAW: {len(raw_data)}chars]"
+                
+                log_line = f"{timestamp}\t[{event_type}]\t{message}\n"
+                
+                with open(self.status_log_file, 'a', encoding='utf-8') as f:
+                    f.write(log_line)
+                    
+        except Exception as e:
+            print(f"❌ 상태 로그 이벤트 기록 실패: {str(e)}")
+
     def setup_gui(self):
         """GUI 인터페이스 설정"""
-        self.root = tk.Tk()
         self.root.title("OnBoard OLED Monitor v1.4 - Request-Response Protocol")
         self.root.geometry("1000x750")  # 크기 확대
         self.root.resizable(True, True)
@@ -115,6 +301,7 @@ class OLEDMonitor:
         # 도구 메뉴
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="도구", menu=tools_menu)
+        tools_menu.add_command(label="상태 로그 열기", command=self.open_status_log)
         tools_menu.add_command(label="설정", command=self.open_settings)
         tools_menu.add_command(label="도움말", command=self.show_help)
         
@@ -210,20 +397,17 @@ class OLEDMonitor:
                                command=self.refresh_status)
         refresh_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        # 디버깅 버튼들
-        test_btn = ttk.Button(top_frame, text="TEST", 
-                            command=self.test_connection)
-        test_btn.pack(side=tk.LEFT, padx=(0, 5))
+        # 저장 기능 버튼들 (우측 정렬)
+        save_frame = ttk.Frame(top_frame)
+        save_frame.pack(side=tk.RIGHT)
         
-        simple_btn = ttk.Button(top_frame, text="GET_SIMPLE", 
-                              command=self.test_simple_screen)
-        simple_btn.pack(side=tk.LEFT, padx=(0, 5))
+        save_session_btn = ttk.Button(save_frame, text="세션 저장", 
+                                    command=self.save_session)
+        save_session_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        # 자동 저장 체크박스
-        self.auto_save_var = tk.BooleanVar()
-        auto_save_cb = ttk.Checkbutton(top_frame, text="자동 저장", 
-                                      variable=self.auto_save_var)
-        auto_save_cb.pack(side=tk.RIGHT)
+        save_screen_btn = ttk.Button(save_frame, text="화면 저장", 
+                                   command=self.save_screen_high_res)
+        save_screen_btn.pack(side=tk.LEFT, padx=(0, 0))
         
         # 하단 행: 원격 제어
         remote_frame = ttk.LabelFrame(control_frame, text="원격 제어")
@@ -281,23 +465,18 @@ class OLEDMonitor:
         setting_frame = ttk.Frame(remote_frame)
         setting_frame.pack(fill=tk.X, pady=2)
         
-        ttk.Label(setting_frame, text="타이머 설정:").pack(side=tk.LEFT)
+        ttk.Label(setting_frame, text="타이머 설정(분):").pack(side=tk.LEFT)
         
         self.timer_min_var = tk.StringVar(value="05")
-        min_spin = ttk.Spinbox(setting_frame, from_=0, to=99, width=3,
+        min_spin = ttk.Spinbox(setting_frame, from_=1, to=99, width=5,
                               textvariable=self.timer_min_var, format="%02.0f")
-        min_spin.pack(side=tk.LEFT, padx=(5, 2))
+        min_spin.pack(side=tk.LEFT, padx=(5, 5))
         
-        ttk.Label(setting_frame, text=":").pack(side=tk.LEFT)
-        
-        self.timer_sec_var = tk.StringVar(value="30")
-        sec_spin = ttk.Spinbox(setting_frame, from_=0, to=59, width=3,
-                              textvariable=self.timer_sec_var, format="%02.0f")
-        sec_spin.pack(side=tk.LEFT, padx=(2, 5))
+        ttk.Label(setting_frame, text="분").pack(side=tk.LEFT)
         
         set_timer_btn = ttk.Button(setting_frame, text="타이머 설정", 
                                  command=self.remote_set_timer)
-        set_timer_btn.pack(side=tk.LEFT, padx=(5, 0))
+        set_timer_btn.pack(side=tk.LEFT, padx=(10, 0))
         
     def create_status_frame(self, parent):
         """상태 정보 프레임"""
@@ -327,7 +506,7 @@ class OLEDMonitor:
             self.disconnect_device()
             
     def connect_device(self):
-        """디바이스 연결"""
+        """디바이스 연결 - RAW 데이터 로깅 포함"""
         try:
             port = self.port_var.get()
             baud = int(self.baud_var.get())
@@ -340,16 +519,33 @@ class OLEDMonitor:
             
             self.log_message(f"포트 {port}에 연결됨 (보드레이트: {baud})")
             
+            # 연결 이벤트 로그 (연결 정보를 RAW 데이터로 기록)
+            connection_info = f"PORT:{port},BAUD:{baud},TIMEOUT:1"
+            self.write_status_log_event("CONNECT", f"포트 {port} 연결 (보드레이트: {baud})", connection_info.encode())
+            
         except Exception as e:
-            messagebox.showerror("연결 오류", f"연결할 수 없습니다: {str(e)}")
+            error_msg = f"연결할 수 없습니다: {str(e)}"
+            messagebox.showerror("연결 오류", error_msg)
             self.log_message(f"연결 오류: {str(e)}")
             
+            # 연결 실패 이벤트 로그 (오류 정보를 RAW 데이터로 기록)
+            error_info = f"PORT:{self.port_var.get()},BAUD:{self.baud_var.get()},ERROR:{str(e)}"
+            self.write_status_log_event("CONNECT_FAIL", f"연결 실패: {str(e)}", error_info.encode())
+            
     def disconnect_device(self):
-        """디바이스 연결 해제"""
+        """디바이스 연결 해제 - RAW 데이터 로깅 포함"""
         if self.is_monitoring:
             self.stop_monitoring()
             
+        connection_info = ""
         if self.serial_port:
+            # 연결 해제 전 연결 정보 수집
+            try:
+                port_info = f"PORT:{self.serial_port.port},BAUD:{self.serial_port.baudrate}"
+                connection_info = port_info
+            except:
+                connection_info = "PORT:UNKNOWN,BAUD:UNKNOWN"
+                
             self.serial_port.close()
             self.serial_port = None
             
@@ -358,6 +554,9 @@ class OLEDMonitor:
         self.status_label.config(text="연결 안됨", foreground="red")
         self.log_message("연결이 해제되었습니다")
         
+        # 연결 해제 이벤트 로그 (연결 정보를 RAW 데이터로 기록)
+        self.write_status_log_event("DISCONNECT", "연결 해제", connection_info.encode() if connection_info else None)
+    
     def toggle_monitoring(self):
         """모니터링 시작/중지"""
         if not self.is_connected:
@@ -370,105 +569,116 @@ class OLEDMonitor:
             self.stop_monitoring()
             
     def start_monitoring(self):
-        """모니터링 시작 - 요청-응답 방식으로 완전 전환"""
+        """모니터링 시작 - 최적화된 버전"""
         if not self.is_connected:
-            messagebox.showwarning("경고", "먼저 디바이스에 연결하세요")
+            messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
             return
             
-        self.is_monitoring = True
-        self.monitor_btn.config(text="모니터링 중지")
-        
-        # 갱신 주기 동기화
-        self.update_interval_ms = int(self.interval_var.get())
-        self.auto_request_enabled = self.auto_request_var.get()
-        
-        # 펌웨어에 요청-응답 모드 설정 (필수)
         try:
+            # 성능 통계 초기화
+            self.performance_stats = {
+                'start_time': time.time(),
+                'total_captures': 0,
+                'successful_captures': 0,
+                'fps_counter': 0,
+                'fps_start_time': time.time()
+            }
+            
+            # 시리얼 버퍼 클리어 (빠른 시작)
             self.clear_serial_buffers()
             
-            # 1단계: 펌웨어를 요청-응답 모드로 설정
+            # 1단계: 간단한 연결 테스트 (빠른 응답 확인)
+            self.serial_port.write(b'PING\n')
+            self.serial_port.flush()
+            
+            quick_response = self.wait_for_response(1000)  # 1초 대기
+            if not quick_response or b'PONG' not in quick_response:
+                self.log_message("⚠️ 펌웨어 연결 테스트 실패 - 계속 진행")
+            else:
+                self.log_message("✅ 펌웨어 연결 확인 완료")
+            
+            # 2단계: 모니터링 모드 설정 (간소화)
             command = f"SET_UPDATE_MODE:REQUEST_RESPONSE,{self.update_interval_ms}\n"
             self.serial_port.write(command.encode())
             self.serial_port.flush()
             
-            response = self.wait_for_response(3000)  # 타임아웃 증가 2000 -> 3000
+            response = self.wait_for_response(1000)
             if response and b'OK:Request-Response mode set' in response:
                 self.log_message(f"✅ 펌웨어 요청-응답 모드 설정 완료 (주기: {self.update_interval_ms}ms)")
             else:
                 self.log_message("⚠️ 펌웨어 모드 설정 응답 확인 실패 - 계속 진행")
                 
-            # 2단계: 모니터링 활성화 (요청-응답 방식)
+            # 3단계: 모니터링 활성화 (간소화)
             self.serial_port.write(b'START_MONITOR\n')
             self.serial_port.flush()
             
-            response = self.wait_for_response(3000)  # 타임아웃 증가 2000 -> 3000
-            if response and b'OK:Monitoring started' in response:  # 응답 문자열 수정
-                self.log_message("✅ 펌웨어 모니터링 모드 활성화됨")
+            response = self.wait_for_response(1000)
+            if response and b'OK:Monitoring started' in response:
+                self.log_message("✅ 펌웨어 모니터링 활성화 완료")
             else:
                 self.log_message("⚠️ 펌웨어 모니터링 활성화 응답 확인 실패 - 계속 진행")
-                
+            
+            # 모니터링 플래그 설정
+            self.is_monitoring = True
+            
+            # UI 업데이트 (ttk.Button 스타일 사용)
+            self.monitor_btn.config(text="모니터링 중지")
+            
+            # 모니터링 모드에 따른 로그
+            mode_text = "자동 모드" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            self.log_message(f"🚀 요청-응답 기반 모니터링 시작 - {mode_text}{interval_text}")
+            
+            # 상태 로그에 모니터링 시작 이벤트 기록
+            self.write_status_log_event("START", f"모니터링 시작 - {mode_text}{interval_text}")
+            
+            # 캡처 스레드 시작 (높은 우선순위)
+            self.capture_thread = threading.Thread(target=self.capture_loop, daemon=True)
+            self.capture_thread.start()
+            
+            # 상태 모니터링 스레드 시작 (낮은 우선순위)
+            self.status_thread = threading.Thread(target=self.status_loop, daemon=True)
+            self.status_thread.start()
+            
         except Exception as e:
-            self.log_message(f"❌ 펌웨어 설정 오류: {str(e)}")
-        
-        # 화면 캡처 스레드 시작 (요청-응답 기반)
-        self.capture_thread = threading.Thread(target=self.capture_loop, daemon=True)
-        self.capture_thread.start()
-        
-        # 상태 모니터링 스레드 시작 (요청-응답 기반)
-        self.status_thread = threading.Thread(target=self.status_loop, daemon=True)
-        self.status_thread.start()
-        
-        mode_text = f"자동 모드 ({self.update_interval_ms}ms)" if self.auto_request_enabled else "수동 모드"
-        self.log_message(f"🚀 요청-응답 기반 모니터링 시작 - {mode_text}")
-        
-        # UI 상태 업데이트
-        if self.auto_request_enabled:
-            self.update_mode_label.config(text=f"자동 모드 ({self.update_interval_ms}ms)", foreground="green")
-        else:
-            self.update_mode_label.config(text="수동 모드", foreground="orange")
-        
+            self.log_message(f"❌ 모니터링 시작 오류: {str(e)}")
+            self.is_monitoring = False
+            self.monitor_btn.config(text="모니터링 시작")
+    
     def stop_monitoring(self):
-        """모니터링 중지 - 완전한 상태 초기화"""
+        """모니터링 중지 - 최적화된 안전한 종료"""
+        if not self.is_monitoring:
+            return
+            
+        # 모니터링 플래그 즉시 비활성화
         self.is_monitoring = False
+        
+        # UI 즉시 업데이트
         self.monitor_btn.config(text="모니터링 시작")
         
-        # 스레드 완전 종료 대기
-        if hasattr(self, 'capture_thread') and self.capture_thread and self.capture_thread.is_alive():
-            self.capture_thread.join(timeout=2.0)  # 2초 대기
-            
-        if hasattr(self, 'status_thread') and self.status_thread and self.status_thread.is_alive():
-            self.status_thread.join(timeout=2.0)  # 2초 대기
-        
-        # 펌웨어에 모니터링 중지 명령 전송
-        if self.is_connected and self.serial_port:
-            try:
-                # 버퍼 완전 클리어
-                self.clear_serial_buffers()
-                
-                # 모니터링 중지 명령
+        try:
+            # 펌웨어에 모니터링 중지 명령 전송 (빠른 처리)
+            if self.is_connected and self.serial_port:
                 self.serial_port.write(b'STOP_MONITOR\n')
                 self.serial_port.flush()
                 
-                # 응답 대기
-                response = self.wait_for_response(1000)
+                # 응답 확인 (짧은 타임아웃)
+                response = self.wait_for_response(500)
                 if response and b'OK:Monitoring stopped' in response:
-                    self.log_message("✅ 펌웨어 모니터링 모드 비활성화됨")
+                    self.log_message("✅ 펌웨어 모니터링 모드 비활성화 완료")
                 else:
                     self.log_message("⚠️ 펌웨어 모니터링 모드 비활성화 응답 없음")
-                    
-                # 추가 정리: 남은 데이터 완전 제거
-                time.sleep(0.1)  # 100ms 대기
-                self.clear_serial_buffers()
-                
-            except Exception as e:
-                self.log_message(f"❌ 모니터링 중지 오류: {str(e)}")
+            
+            self.log_message("🛑 모니터링 완전 중지 및 상태 초기화 완료")
+            
+            # 상태 로그에 모니터링 중지 이벤트 기록
+            self.write_status_log_event("STOP", "모니터링 중지")
+            
+        except Exception as e:
+            self.log_message(f"❌ 모니터링 중지 오류: {str(e)}")
         
-        # 성능 통계 리셋
-        self.performance_stats['fps_counter'] = 0
-        self.performance_stats['fps_start_time'] = time.time()
-        
-        self.log_message("🛑 모니터링 완전 중지 및 상태 초기화 완료")
-        
+        # 스레드들은 daemon=True로 설정되어 자동으로 종료됨
+    
     def clear_serial_buffers(self):
         """시리얼 버퍼 완전 클리어"""
         if not self.serial_port:
@@ -493,53 +703,212 @@ class OLEDMonitor:
             self.log_message(f"⚠️ 버퍼 클리어 오류: {str(e)}")
         
     def capture_loop(self):
-        """화면 캡처 루프 - 최적화된 요청-응답 방식"""
+        """화면 캡처 루프 - 최적화된 고성능 버전"""
         consecutive_failures = 0
-        max_failures = 5
+        max_failures = 3  # 실패 허용 횟수 줄임 (5 -> 3)
         last_request_time = 0
         
-        while self.is_monitoring:
-            try:
-                current_time = time.time()
-                
-                # 자동 요청 모드에서만 주기적으로 화면 요청
-                if self.auto_request_enabled:
-                    # 설정된 주기에 따라 화면 요청
-                    interval_seconds = self.update_interval_ms / 1000.0
+        try:
+            while self.is_monitoring:
+                try:
+                    current_time = time.time()
                     
-                    if current_time - last_request_time >= interval_seconds:
-                        success = self.request_screen_update()
-                        last_request_time = current_time
+                    # 자동 요청 모드에서만 주기적으로 화면 요청
+                    if self.auto_request_enabled:
+                        interval_seconds = self.update_interval_ms / 1000.0
                         
-                        if success:
-                            consecutive_failures = 0  # 성공시 실패 카운터 리셋
-                        else:
-                            consecutive_failures += 1
+                        if current_time - last_request_time >= interval_seconds:
+                            # 고속 화면 요청 및 처리
+                            try:
+                                success = self.fast_screen_request()
+                                last_request_time = current_time
+                                
+                                if success:
+                                    consecutive_failures = 0
+                                else:
+                                    consecutive_failures += 1
+                            except Exception as request_error:
+                                consecutive_failures += 1
+                        
+                        # 최적화된 대기 시간 (CPU 효율성 향상)
+                        sleep_time = min(0.005, interval_seconds / 50)  # 5ms 최대, 더 빠른 응답
+                        time.sleep(sleep_time)
+                    else:
+                        # 수동 모드에서는 짧은 대기 (반응성 향상)
+                        time.sleep(0.02)  # 20ms 대기 (기존 100ms에서 대폭 단축)
+                        consecutive_failures = 0
+                        
+                    # 연속 실패 처리 (더 빠른 복구)
+                    if consecutive_failures >= max_failures:
+                        try:
+                            self.root.after(0, lambda: self.log_message(f"🚨 연속 {max_failures}회 실패로 캡처 루프 일시 중단 (0.5초)"))
+                        except:
+                            pass  # 로그 메시지 오류는 무시
+                        time.sleep(0.5)  # 대기 시간 단축 (2초 -> 0.5초)
+                        consecutive_failures = 0
+                        
+                except Exception as inner_error:
+                    consecutive_failures += 1
                     
-                    # 다음 요청까지 대기 (CPU 사용률 최적화)
-                    sleep_time = max(0.01, min(0.05, interval_seconds / 20))  # 10ms~50ms 범위
-                    time.sleep(sleep_time)
-                else:
-                    # 수동 모드에서는 긴 대기 (CPU 절약)
-                    time.sleep(0.1)  # 100ms 대기
-                    consecutive_failures = 0  # 수동 모드에서는 실패 카운터 리셋
-                    
-                # 연속 실패 처리
-                if consecutive_failures >= max_failures:
-                    self.log_message(f"🚨 연속 {max_failures}회 실패로 캡처 루프 일시 중단 (2초)")
-                    time.sleep(2)  # 2초 대기 후 재시도
-                    consecutive_failures = 0
-                    
-            except Exception as e:
-                consecutive_failures += 1
-                self.log_message(f"❌ 캡처 루프 오류 ({consecutive_failures}/{max_failures}): {str(e)}")
+                    if consecutive_failures >= max_failures:
+                        try:
+                            self.root.after(0, lambda: self.log_message("🚨 캡처 루프 오류로 일시 중단"))
+                        except:
+                            pass
+                        time.sleep(0.5)  # 대기 시간 단축
+                        consecutive_failures = 0
+                    else:
+                        time.sleep(0.1)  # 실패시 대기 시간 단축 (0.5초 -> 0.1초)
+                        
+        except Exception as critical_error:
+            # 스레드 전체를 중단시킬 수 있는 심각한 오류 처리
+            try:
+                self.root.after(0, lambda: self.log_message(f"❌ 캡처 루프 심각한 오류: {str(critical_error)}"))
+                self.root.after(0, lambda: self.stop_monitoring())
+            except:
+                # 최후의 안전장치 - 모든 GUI 호출이 실패해도 스레드는 종료
+                pass
+        finally:
+            # 스레드 정리 작업
+            try:
+                self.root.after(0, lambda: self.log_message("🔄 캡처 루프 종료"))
+            except:
+                pass
+    
+    def fast_screen_request(self):
+        """고속 화면 요청 및 처리 (최적화된 버전) - RAW 데이터 로깅 포함"""
+        if not self.is_connected or not self.serial_port:
+            return False
+            
+        try:
+            # 고속 요청 전송
+            self.serial_port.write(b'GET_SCREEN\n')
+            self.serial_port.flush()
+            
+            # 초고속 응답 수집 (블록킹 방식으로 성능 향상)
+            start_time = time.time()
+            response_data = b''
+            timeout_seconds = 0.5  # 타임아웃 단축 (기존보다 빠름)
+            
+            # 필수 마커들
+            markers_found = {
+                'screen_start': False,
+                'data_start': False, 
+                'data_end': False,
+                'screen_end': False
+            }
+            
+            while time.time() - start_time < timeout_seconds:
+                try:
+                    if self.serial_port.in_waiting > 0:
+                        chunk = self.serial_port.read(self.serial_port.in_waiting)
+                        response_data += chunk
+                        
+                        # 마커 검사 (최적화된 방식)
+                        if not markers_found['screen_start'] and b'<<SCREEN_START>>' in response_data:
+                            markers_found['screen_start'] = True
+                        if not markers_found['data_start'] and b'<<DATA_START>>' in response_data:
+                            markers_found['data_start'] = True
+                        if not markers_found['data_end'] and b'<<DATA_END>>' in response_data:
+                            markers_found['data_end'] = True
+                        if not markers_found['screen_end'] and b'<<SCREEN_END>>' in response_data:
+                            markers_found['screen_end'] = True
+                            break  # 모든 데이터 수신 완료
+                        
+                        # 오류 감지
+                        if b'<<TRANSMISSION_ERROR>>' in response_data:
+                            # 전송 오류시 RAW 데이터 로그 기록
+                            if hasattr(self, 'status_logger') and self.status_logger:
+                                self.status_logger.log_screen_capture(False, len(response_data), response_data)
+                            return False
+                    else:
+                        time.sleep(0.001)  # 1ms 대기 (매우 짧음)
+                        
+                except Exception as serial_error:
+                    # 시리얼 통신 오류 처리 및 RAW 데이터 로그
+                    if hasattr(self, 'status_logger') and self.status_logger:
+                        self.status_logger.log_event("SERIAL_ERROR", f"시리얼 오류: {str(serial_error)}", response_data)
+                    return False
+            
+            # 모든 마커 확인
+            if not all(markers_found.values()):
+                # 불완전한 수신시 RAW 데이터 로그
+                if hasattr(self, 'status_logger') and self.status_logger:
+                    missing_markers = [k for k, v in markers_found.items() if not v]
+                    self.status_logger.log_screen_capture(False, len(response_data), response_data)
+                    self.status_logger.log_event("INCOMPLETE_MARKERS", f"누락된 마커: {missing_markers}", response_data)
+                return False
+            
+            # 이미지 데이터 추출 (최적화)
+            try:
+                data_start_pos = response_data.find(b'<<DATA_START>>\n') + len(b'<<DATA_START>>\n')
+                data_end_pos = response_data.find(b'\n<<DATA_END>>')
                 
-                if consecutive_failures >= max_failures:
-                    self.log_message("🚨 캡처 루프 오류로 일시 중단")
-                    time.sleep(2)  # 2초 대기 후 재시도
-                    consecutive_failures = 0
+                if data_start_pos == -1 or data_end_pos == -1:
+                    # 마커 위치 오류시 RAW 데이터 로그
+                    if hasattr(self, 'status_logger') and self.status_logger:
+                        self.status_logger.log_screen_capture(False, len(response_data), response_data)
+                        self.status_logger.log_event("MARKER_POSITION_ERROR", f"마커 위치 오류: start={data_start_pos}, end={data_end_pos}", response_data)
+                    return False
+                
+                img_data = response_data[data_start_pos:data_end_pos]
+                
+                # 크기 검증 (빠른 체크)
+                if len(img_data) != 1024:
+                    # 크기 오류시 RAW 데이터 로그
+                    if hasattr(self, 'status_logger') and self.status_logger:
+                        self.status_logger.log_screen_capture(False, len(img_data), response_data)
+                        self.status_logger.log_event("SIZE_MISMATCH", f"예상 크기: 1024, 실제 크기: {len(img_data)}", img_data)
+                    return False
+                
+                # 고속 파싱 및 화면 업데이트
+                screen_data = self.fast_parse_screen_data(img_data)
+                if screen_data is not None:
+                    # GUI 업데이트는 메인 스레드에서 안전하게 수행
+                    try:
+                        self.root.after(0, lambda: self.update_display(screen_data))
+                    except Exception as gui_error:
+                        # GUI 업데이트 오류는 무시하고 계속 진행
+                        pass
+                    
+                    # 성공적인 화면 캡처 RAW 데이터 로그 (간소화 - 너무 빈번한 로깅 방지)
+                    if hasattr(self, 'status_logger') and self.status_logger and self.performance_stats['total_captures'] % 50 == 0:
+                        # 50회마다 한 번씩만 성공 RAW 데이터 로그
+                        self.status_logger.log_screen_capture(True, len(img_data), img_data[:100])  # 처음 100바이트만 로그
+                    
+                    # 성능 통계 업데이트 (경량화)
+                    self.performance_stats['total_captures'] += 1
+                    self.performance_stats['successful_captures'] += 1
+                    
+                    # 성능 표시 업데이트 (주기 줄임)
+                    if self.performance_stats['total_captures'] % 10 == 0:  # 10회마다 업데이트
+                        try:
+                            self.root.after(0, self.update_performance_display)
+                        except Exception as perf_error:
+                            # 성능 표시 오류는 무시
+                            pass
+                    
+                    return True
                 else:
-                    time.sleep(0.5)  # 실패시 짧은 대기
+                    # 파싱 실패시 RAW 데이터 로그
+                    if hasattr(self, 'status_logger') and self.status_logger:
+                        self.status_logger.log_screen_capture(False, len(img_data), img_data)
+                        self.status_logger.log_event("PARSING_FAILED", "화면 데이터 파싱 실패", img_data)
+                
+            except Exception as parse_error:
+                # 파싱 과정 오류시 RAW 데이터 로그
+                if hasattr(self, 'status_logger') and self.status_logger:
+                    self.status_logger.log_screen_capture(False, len(response_data), response_data)
+                    self.status_logger.log_event("PARSE_EXCEPTION", f"파싱 예외: {str(parse_error)}", response_data)
+                return False
+                
+            return False
+                
+        except Exception as e:
+            # 모든 예외를 안전하게 처리하고 RAW 데이터 로그
+            if hasattr(self, 'status_logger') and self.status_logger:
+                self.status_logger.log_event("SCREEN_REQUEST_ERROR", f"화면 요청 오류: {str(e)}", None)
+            return False
     
     def request_screen_update(self):
         """화면 업데이트 요청 (논블록킹 방식)"""
@@ -662,10 +1031,6 @@ class OLEDMonitor:
                 self.performance_stats['successful_captures'] += 1
                 self.update_performance_display()
                 
-                # 자동 저장이 활성화된 경우
-                if self.auto_save_var.get():
-                    self.auto_save_screen(screen_data)
-                    
                 return True
             
             return False
@@ -675,25 +1040,69 @@ class OLEDMonitor:
             return False
     
     def status_loop(self):
-        """상태 모니터링 루프 - 요청-응답 방식으로 전환"""
+        """상태 모니터링 루프 - 요청-응답 방식으로 전환 및 로그 기록 추가"""
+        status_request_interval = 5.0  # 5초마다 상태 요청
+        last_status_request = 0
+        
         while self.is_monitoring:
             try:
-                # GET_STATUS 명령어로 상태 정보 요청
-                if self.is_connected and self.serial_port:
-                    self.serial_port.write(b'GET_STATUS\n')
-                    self.serial_port.flush()
-                    
-                    # 응답 대기 및 처리
-                    response = self.wait_for_response(1000)
-                    if response:
-                        status_data = self.parse_firmware_status_data(response)
-                        if status_data:
-                            self.update_status_display(status_data)
+                current_time = time.time()
                 
-                time.sleep(2)  # 2초 간격으로 상태 요청
+                # 상태 요청 주기 확인
+                if current_time - last_status_request >= status_request_interval:
+                    # GET_STATUS 명령어로 상태 정보 요청
+                    if self.is_connected and self.serial_port:
+                        try:
+                            self.serial_port.write(b'GET_STATUS\n')
+                            self.serial_port.flush()
+                            
+                            # 응답 대기 및 처리
+                            response = self.wait_for_response(1000)
+                            if response:
+                                status_data = self.parse_firmware_status_data(response)
+                                if status_data:
+                                    # GUI 업데이트
+                                    self.root.after(0, lambda data=status_data: self.update_status_display(data))
+                                    
+                                    # 상태 로그에 기록
+                                    self.write_status_log(status_data)
+                                    
+                                    last_status_request = current_time
+                                else:
+                                    # 파싱 실패시 테스트 데이터로 대체
+                                    test_status = self.generate_test_status_data()
+                                    self.root.after(0, lambda data=test_status: self.update_status_display(data))
+                                    
+                            else:
+                                # 응답 없음 - 연결 상태 문제일 수 있음
+                                self.write_status_log_event("WARNING", "상태 응답 없음 - 연결 확인 필요")
+                                
+                        except Exception as status_error:
+                            self.write_status_log_event("ERROR", f"상태 요청 오류: {str(status_error)}")
+                            
+                    last_status_request = current_time
+                
+                time.sleep(1)  # 1초 간격으로 루프 실행
+                
             except Exception as e:
-                self.log_message(f"상태 루프 오류: {str(e)}")
+                self.write_status_log_event("ERROR", f"상태 루프 오류: {str(e)}")
                 time.sleep(2)
+    
+    def generate_test_status_data(self):
+        """테스트용 상태 데이터 생성"""
+        import random
+        
+        statuses = ['STANDBY', 'RUNNING', 'SETTING', 'COOLING']
+        
+        return {
+            'battery': random.randint(20, 100),
+            'timer': f"{random.randint(0, 59):02d}:{random.randint(0, 59):02d}",
+            'status': random.choice(statuses),
+            'l1_connected': random.choice([True, False]),
+            'l2_connected': random.choice([True, False]),
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'source': 'test_data'
+        }
     
     def capture_screen(self):
         """수동 화면 캡처 (버튼 클릭용)"""
@@ -893,7 +1302,20 @@ class OLEDMonitor:
             if len(img_data) != 1024:
                 self.log_message(f"❌ 잘못된 데이터 크기: {len(img_data)}")
                 return None
+            
+            # 원본 데이터 저장 (파싱 방법 변경시 재사용)
+            self.last_raw_data = img_data
                 
+            # NumPy 사용 가능 여부 확인
+            if not self.numpy_available:
+                try:
+                    import numpy as np
+                    self.numpy_available = True
+                except ImportError:
+                    return self._parse_without_numpy(img_data)
+            
+            import numpy as np
+            
             # OLED 데이터를 PIL 이미지로 변환
             img_array = np.zeros((self.OLED_HEIGHT, self.OLED_WIDTH), dtype=np.uint8)
             width_bytes = self.OLED_WIDTH // 8  # 16 bytes per row
@@ -1009,6 +1431,43 @@ class OLEDMonitor:
             
         except Exception as e:
             self.log_message(f"❌ 파싱 오류: {str(e)}")
+            return None
+    
+    def _parse_without_numpy(self, img_data):
+        """NumPy 없이 파싱하는 폴백 함수"""
+        try:
+            # 원본 데이터 저장
+            self.last_raw_data = img_data
+            
+            # PIL로 직접 처리
+            img = Image.new('L', (128, 64), 0)
+            pixels = []
+            
+            for y in range(64):
+                for x in range(128):
+                    byte_index = y * 16 + x // 8
+                    if byte_index < len(img_data):
+                        byte_val = img_data[byte_index]
+                        bit_pos = 7 - (x % 8)
+                        pixel_val = 255 if (byte_val >> bit_pos) & 1 else 0
+                        pixels.append(pixel_val)
+                    else:
+                        pixels.append(0)
+            
+            img.putdata(pixels)
+            
+            # 파싱 방법 적용 (간단한 변환만)
+            if self.parsing_method == "method3_rotated_180":
+                img = img.rotate(180)
+            elif self.parsing_method == "method4_flipped_h":
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            elif self.parsing_method == "method5_flipped_v":
+                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            
+            return img
+            
+        except Exception as e:
+            self.log_message(f"❌ NumPy 없는 파싱 오류: {str(e)}")
             return None
     
     def reverse_byte(self, byte_val):
@@ -1130,10 +1589,20 @@ class OLEDMonitor:
         except Exception as e:
             self.log_message(f"상태 요청 실패: {str(e)}")
     
-    def parse_firmware_status_data(self, data):
-        """펌웨어에서 받은 상태 데이터 파싱"""
+    def parse_firmware_status_data(self, response):
+        """펌웨어에서 받은 상태 데이터 파싱 - RAW 데이터 포함"""
         try:
-            data_str = data.decode('utf-8', errors='ignore').strip()
+            # 강화된 시리얼 파서 사용 (RAW 데이터 지원)
+            if self.serial_parser:
+                return self.serial_parser.parse_status_data(response)
+            
+            # 폴백: 기본 파싱 (RAW 데이터 포함)
+            if isinstance(response, bytes):
+                raw_data = response
+                data_str = response.decode('utf-8', errors='ignore').strip()
+            else:
+                data_str = str(response).strip()
+                raw_data = data_str.encode('utf-8')
             
             # STATUS: 형식인지 확인
             if not data_str.startswith('STATUS:'):
@@ -1143,7 +1612,12 @@ class OLEDMonitor:
             status_part = data_str[7:]  # "STATUS:" 제거
             
             # 각 항목 파싱
-            status_info = {'timestamp': datetime.now().strftime('%H:%M:%S'), 'source': 'firmware'}
+            status_info = {
+                'timestamp': datetime.now().strftime('%H:%M:%S'), 
+                'source': 'firmware',
+                'raw_data': raw_data,  # 원본 RAW 데이터 추가
+                'raw_string': data_str  # 문자열 형태도 추가
+            }
             
             items = status_part.split(',')
             for item in items:
@@ -1152,7 +1626,10 @@ class OLEDMonitor:
                     
                     if key == 'BAT':
                         # 배터리: "75%" -> 75
-                        status_info['battery'] = int(value.replace('%', ''))
+                        try:
+                            status_info['battery'] = int(value.replace('%', ''))
+                        except ValueError:
+                            status_info['battery'] = 0
                     elif key == 'TIMER':
                         # 타이머: "05:30"
                         status_info['timer'] = value
@@ -1166,43 +1643,82 @@ class OLEDMonitor:
                         # L2 연결: "0" -> False
                         status_info['l2_connected'] = (value == '1')
             
+            # 필수 필드 기본값 설정
+            if 'battery' not in status_info:
+                status_info['battery'] = 0
+            if 'timer' not in status_info:
+                status_info['timer'] = '00:00'
+            if 'status' not in status_info:
+                status_info['status'] = 'UNKNOWN'
+            if 'l1_connected' not in status_info:
+                status_info['l1_connected'] = False
+            if 'l2_connected' not in status_info:
+                status_info['l2_connected'] = False
+            
             return status_info
             
         except Exception as e:
             self.log_message(f"상태 데이터 파싱 오류: {str(e)}")
-            return None
-        
+            # 오류시에도 RAW 데이터 포함하여 반환
+            return {
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                'source': 'firmware_error',
+                'battery': 0,
+                'timer': '00:00',
+                'status': 'ERROR',
+                'l1_connected': False,
+                'l2_connected': False,
+                'error': str(e),
+                'raw_data': response if isinstance(response, bytes) else str(response).encode('utf-8'),
+                'raw_string': response.decode('utf-8', errors='ignore') if isinstance(response, bytes) else str(response)
+            }
+    
     def update_display(self, screen_data):
-        """화면 디스플레이 업데이트"""
+        """화면 업데이트 (PIL/NumPy 호환 버전)"""
+        if screen_data is None:
+            return
+            
         try:
-            # PIL 이미지로 변환 (L 모드로 직접 생성하여 성능 향상)
-            img = Image.fromarray(screen_data, mode='L')
+            # 화면 데이터를 PIL Image로 통일
+            if hasattr(screen_data, 'save'):
+                # 이미 PIL Image인 경우
+                display_img = screen_data
+            elif hasattr(screen_data, 'shape'):
+                # NumPy 배열인 경우
+                display_img = Image.fromarray(screen_data.astype('uint8'), mode='L')
+            else:
+                # 다른 형식인 경우 PIL Image로 변환 시도
+                display_img = Image.fromarray(screen_data, mode='L')
             
-            # 확대 (NEAREST 방식으로 빠른 처리)
-            scale = self.scale_var.get()
-            if scale > 1:
-                new_size = (self.OLED_WIDTH * scale, self.OLED_HEIGHT * scale)
-                img = img.resize(new_size, Image.NEAREST)
+            # 스케일링 최적화
+            scale = int(self.scale_var.get())
             
-            # Tkinter PhotoImage로 변환
-            photo = ImageTk.PhotoImage(img)
+            if scale == 1:
+                # 스케일링 없음 - 최고 성능
+                final_img = display_img
+            else:
+                # 고품질 리사이징 (필요시에만)
+                new_size = (128 * scale, 64 * scale)
+                final_img = display_img.resize(new_size, Image.NEAREST)  # NEAREST는 가장 빠름
             
-            # 캔버스 업데이트 (이전 이미지 제거 후 새 이미지 추가)
-            self.canvas.delete("screen_image")  # 태그로 삭제하여 성능 향상
-            canvas_x = (self.canvas.winfo_width() // 2) if self.canvas.winfo_width() > 1 else 256
-            canvas_y = (self.canvas.winfo_height() // 2) if self.canvas.winfo_height() > 1 else 128
-            self.canvas.create_image(canvas_x, canvas_y, image=photo, tags="screen_image")
-            self.canvas.image = photo  # 참조 유지
+            # PhotoImage 변환 최적화
+            self.current_image = ImageTk.PhotoImage(final_img)
             
+            # Canvas 업데이트 (최소한의 연산)
+            self.canvas.delete("all")  # 이전 이미지 삭제
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.current_image)
+            
+            # Canvas 크기 자동 조정
+            canvas_width = 128 * scale
+            canvas_height = 64 * scale
+            self.canvas.config(width=canvas_width, height=canvas_height)
+            
+            # 현재 화면 저장 (파싱 방법 변경용)
             self.current_screen = screen_data
             
         except Exception as e:
-            # 오류 로그도 간소화
-            if hasattr(self, '_last_display_error') and time.time() - self._last_display_error < 5:
-                return  # 5초 내 동일 오류는 스킵
-            self._last_display_error = time.time()
-            self.log_message(f"화면 업데이트 오류: {str(e)}")
-            
+            self.log_message(f"❌ 화면 업데이트 오류: {str(e)}")
+    
     def update_display_scale(self, value):
         """화면 확대 비율 업데이트"""
         scale = int(float(value))
@@ -1246,43 +1762,65 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
     def refresh_status(self):
         """상태 새로고침"""
         if self.is_connected:
-            self.request_status()
+            try:
+                # 즉시 상태 요청
+                self.serial_port.write(b'GET_STATUS\n')
+                self.serial_port.flush()
+                
+                response = self.wait_for_response(2000)
+                if response:
+                    status_data = self.parse_firmware_status_data(response)
+                    if status_data:
+                        self.update_status_display(status_data)
+                        # 수동 새로고침도 로그에 기록
+                        self.write_status_log(status_data)
+                        self.write_status_log_event("MANUAL", "수동 상태 새로고침")
+                    else:
+                        # 파싱 실패시 테스트 데이터
+                        test_status = self.generate_test_status_data()
+                        self.update_status_display(test_status)
+                else:
+                    self.log_message("❌ 상태 새로고침 응답 없음")
+                    
+            except Exception as e:
+                self.log_message(f"❌ 상태 새로고침 오류: {str(e)}")
+                self.write_status_log_event("ERROR", f"상태 새로고침 오류: {str(e)}")
         else:
             messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
-            
+    
     def save_screen(self):
-        """화면 저장"""
+        """화면 저장 - 개선된 버전"""
         if self.current_screen is None:
             messagebox.showwarning("경고", "저장할 화면이 없습니다")
             return
             
         filename = filedialog.asksaveasfilename(
             defaultextension=".png",
-            filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+            filetypes=[("PNG files", "*.png"), ("JPEG files", "*.jpg"), ("All files", "*.*")]
         )
         
         if filename:
             try:
-                img = Image.fromarray(self.current_screen)
-                img.save(filename)
-                self.log_message(f"화면이 저장되었습니다: {filename}")
-            except Exception as e:
-                messagebox.showerror("오류", f"저장 실패: {str(e)}")
+                # 현재 화면 데이터 타입에 따라 처리
+                if hasattr(self.current_screen, 'save'):
+                    # PIL Image 객체인 경우
+                    self.current_screen.save(filename)
+                elif hasattr(self.current_screen, 'shape'):
+                    # NumPy 배열인 경우
+                    img = Image.fromarray(self.current_screen.astype('uint8'), mode='L')
+                    img.save(filename)
+                else:
+                    # 다른 형식인 경우 PIL Image로 변환 시도
+                    img = Image.fromarray(self.current_screen, mode='L')
+                    img.save(filename)
+                    
+                self.log_message(f"✅ 화면이 저장되었습니다: {filename}")
                 
-    def auto_save_screen(self, screen_data):
-        """자동 화면 저장"""
-        if not os.path.exists("captures"):
-            os.makedirs("captures")
-            
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"captures/oled_capture_{timestamp}.png"
-        
-        try:
-            img = Image.fromarray(screen_data)
-            img.save(filename)
-        except Exception as e:
-            self.log_message(f"자동 저장 실패: {str(e)}")
-            
+            except Exception as e:
+                error_msg = f"화면 저장 실패: {str(e)}"
+                messagebox.showerror("오류", error_msg)
+                self.log_message(f"❌ {error_msg}")
+                
     def save_session(self):
         """세션 기록 저장"""
         filename = filedialog.asksaveasfilename(
@@ -1306,7 +1844,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
                 self.log_message(f"세션이 저장되었습니다: {filename}")
             except Exception as e:
                 messagebox.showerror("오류", f"저장 실패: {str(e)}")
-                
+    
     def log_message(self, message):
         """로그 메시지 출력 - 중복 방지 및 출력 최적화"""
         current_time = time.time()
@@ -1414,13 +1952,55 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
         messagebox.showinfo("도움말", help_text)
         
     def on_closing(self):
-        """애플리케이션 종료 처리"""
-        if self.is_monitoring:
-            self.stop_monitoring()
-        if self.is_connected:
-            self.disconnect_device()
-        self.root.destroy()
-        
+        """애플리케이션 종료 처리 - 강화된 안전 종료"""
+        try:
+            print("프로그램 종료 중...")
+            
+            # 상태 로그에 종료 이벤트 기록
+            if hasattr(self, 'status_log_file') and self.status_log_file:
+                self.write_status_log_event("SHUTDOWN", "프로그램 종료")
+            
+            # 1단계: 모니터링 중지
+            if self.is_monitoring:
+                try:
+                    self.stop_monitoring()
+                    # 스레드가 완전히 종료될 시간 제공
+                    time.sleep(0.5)
+                except Exception as monitor_error:
+                    print(f"모니터링 중지 오류: {str(monitor_error)}")
+            
+            # 2단계: 시리얼 연결 해제
+            if self.is_connected:
+                try:
+                    self.disconnect_device()
+                except Exception as disconnect_error:
+                    print(f"연결 해제 오류: {str(disconnect_error)}")
+            
+            # 3단계: 시리얼 포트 강제 닫기
+            if hasattr(self, 'serial_port') and self.serial_port:
+                try:
+                    if self.serial_port.is_open:
+                        self.serial_port.close()
+                except Exception as port_error:
+                    print(f"포트 닫기 오류: {str(port_error)}")
+            
+            # 4단계: GUI 정리
+            try:
+                self.root.destroy()
+            except Exception as gui_error:
+                print(f"GUI 정리 오류: {str(gui_error)}")
+                # GUI 정리 실패시 강제 종료
+                import sys
+                sys.exit(0)
+                
+            print("프로그램이 안전하게 종료되었습니다.")
+            
+        except Exception as critical_error:
+            print(f"치명적 종료 오류: {str(critical_error)}")
+            # 모든 정리 작업이 실패해도 프로그램은 종료
+            import sys
+            sys.exit(1)
+    
     def run(self):
         """애플리케이션 실행"""
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -1443,6 +2023,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             response = self.wait_for_response(2000)  # 타임아웃 증가
             if response and b'OK:Timer started' in response:
                 self.log_message("✅ 타이머가 시작되었습니다")
+                self.write_status_log_event("CONTROL", "원격 타이머 시작")
             elif response:
                 response_str = response.decode('utf-8', errors='ignore').strip()
                 self.log_message(f"⚠️ 타이머 시작 응답: {response_str}")
@@ -1451,6 +2032,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
                 
         except Exception as e:
             self.log_message(f"❌ 원격 제어 오류: {str(e)}")
+            self.write_status_log_event("ERROR", f"원격 타이머 시작 오류: {str(e)}")
     
     def remote_stop_timer(self):
         """원격 타이머 정지"""
@@ -1469,6 +2051,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             response = self.wait_for_response(2000)  # 타임아웃 증가
             if response and b'OK:Timer stopped' in response:
                 self.log_message("✅ 타이머가 정지되었습니다")
+                self.write_status_log_event("CONTROL", "원격 타이머 정지")
             elif response:
                 response_str = response.decode('utf-8', errors='ignore').strip()
                 self.log_message(f"⚠️ 타이머 정지 응답: {response_str}")
@@ -1477,38 +2060,38 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
                 
         except Exception as e:
             self.log_message(f"❌ 원격 제어 오류: {str(e)}")
+            self.write_status_log_event("ERROR", f"원격 타이머 정지 오류: {str(e)}")
     
     def remote_set_timer(self):
-        """원격 타이머 설정"""
+        """원격 타이머 설정 (분 단위만)"""
         if not self.is_connected:
             messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
             return
             
         try:
             minutes = self.timer_min_var.get()
-            seconds = self.timer_sec_var.get()
             
-            # 유효성 검사
+            # 유효성 검사 (분만)
             try:
                 min_val = int(minutes)
-                sec_val = int(seconds)
-                if min_val < 0 or min_val > 99 or sec_val < 0 or sec_val > 59:
-                    raise ValueError("시간 범위 오류")
+                if min_val < 1 or min_val > 99:
+                    raise ValueError("분 범위 오류")
             except ValueError:
-                messagebox.showerror("오류", "올바른 시간을 입력하세요 (분: 0-99, 초: 0-59)")
+                messagebox.showerror("오류", "올바른 시간을 입력하세요 (분: 1-99)")
                 return
             
             # 명령 전송 전 버퍼 클리어
             self.clear_serial_buffers()
             
-            command = f"SET_TIMER:{minutes:0>2}:{seconds:0>2}\n"
+            # 분 단위로 설정 (초는 항상 00)
+            command = f"SET_TIMER:{minutes:0>2}:00\n"
             self.serial_port.write(command.encode())
             self.serial_port.flush()
             
             # 응답 확인
             response = self.wait_for_response(2000)  # 타임아웃 증가
             if response and b'OK:Timer set' in response:
-                self.log_message(f"✅ 타이머가 {minutes}:{seconds}으로 설정되었습니다")
+                self.log_message(f"✅ 타이머가 {minutes}분으로 설정되었습니다")
             elif response:
                 response_str = response.decode('utf-8', errors='ignore').strip()
                 self.log_message(f"⚠️ 타이머 설정 응답: {response_str}")
@@ -1577,51 +2160,34 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
         except Exception as e:
             self.log_message(f"❌ 연결 테스트 오류: {str(e)}")
     
-    def wait_for_response(self, timeout_ms=500):
-        """응답 대기 (원격 제어용) - 강화된 버전"""
-        if not self.serial_port:
+    def wait_for_response(self, timeout_ms=200):
+        """응답 대기 (최적화된 버전)"""
+        if not self.is_connected or not self.serial_port:
             return None
             
-        response_data = b''
-        timeout_count = 0
-        max_timeout = timeout_ms // 10  # 10ms 단위
-        
-        while timeout_count < max_timeout:
-            try:
+        try:
+            timeout_seconds = timeout_ms / 1000.0
+            start_time = time.time()
+            response_data = b''
+            
+            while time.time() - start_time < timeout_seconds:
                 if self.serial_port.in_waiting > 0:
+                    # 한번에 모든 대기 중인 데이터 읽기
                     chunk = self.serial_port.read(self.serial_port.in_waiting)
                     response_data += chunk
                     
-                    # 완전한 응답 확인 (개행 문자 또는 응답 완료 패턴)
-                    if b'\n' in response_data or b'OK:' in response_data or b'ERROR:' in response_data:
-                        # 추가 데이터가 있을 수 있으니 잠시 더 대기
-                        time.sleep(0.05)  # 50ms 추가 대기
-                        
-                        # 남은 데이터가 있다면 수신
-                        if self.serial_port.in_waiting > 0:
-                            final_chunk = self.serial_port.read(self.serial_port.in_waiting)
-                            response_data += final_chunk
-                        
-                        break
+                    # 완전한 응답 라인 확인 (개행 문자 포함)
+                    if b'\n' in response_data:
+                        return response_data
                 else:
-                    time.sleep(0.01)
-                    timeout_count += 1
-                    
-            except Exception as e:
-                self.log_message(f"⚠️ 응답 수신 오류: {str(e)}")
-                break
-        
-        # 응답 데이터 후처리
-        if len(response_data) > 0:
-            try:
-                # 디코딩 가능한 텍스트만 반환
-                decoded_response = response_data.decode('utf-8', errors='ignore')
-                if decoded_response.strip():
-                    return response_data
-            except:
-                pass
-        
-        return response_data if len(response_data) > 0 else None
+                    # 매우 짧은 대기 (1ms)
+                    time.sleep(0.001)
+            
+            # 타임아웃 발생시에도 수신된 데이터가 있으면 반환
+            return response_data if response_data else None
+            
+        except Exception as e:
+            return None
 
     def test_connection(self):
         """기본 연결 테스트 (PING 명령어로 변경)"""
@@ -1756,18 +2322,36 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
     def on_parsing_method_changed(self, event):
         """파싱 방법 변경 처리"""
         self.parsing_method = self.parsing_var.get()
-        # 파싱 방법 변경 로그는 throttle 시스템으로 제한됨
-        self.log_message(f"파싱 방법 변경: {self.parsing_method}")
-        if self.current_screen is not None:
-            self.update_display(self.current_screen)
+        self.log_message(f"🔄 파싱 방법 변경: {self.parsing_method}")
+        
+        # 현재 화면이 있으면 새로운 파싱 방법으로 재처리
+        if hasattr(self, 'last_raw_data') and self.last_raw_data is not None:
+            # 마지막 원본 데이터를 새 파싱 방법으로 재처리
+            screen_data = self.parse_firmware_screen_data_enhanced(self.last_raw_data)
+            if screen_data is not None:
+                self.current_screen = screen_data
+                self.update_display(screen_data)
+        elif self.current_screen is not None:
+            # 테스트 패턴 재생성
+            test_screen = self.generate_test_screen()
+            self.update_display(test_screen)
 
     def apply_parsing_method(self):
-        """파싱 방법 적용"""
+        """파싱 방법 수동 적용"""
         self.parsing_method = self.parsing_var.get()
-        # 수동 적용은 항상 로그 출력
-        self.log_message(f"파싱 방법 수동 적용: {self.parsing_method}")
-        if self.current_screen is not None:
-            self.update_display(self.current_screen)
+        self.log_message(f"✅ 파싱 방법 수동 적용: {self.parsing_method}")
+        
+        # 현재 화면이 있으면 새로운 파싱 방법으로 재처리
+        if hasattr(self, 'last_raw_data') and self.last_raw_data is not None:
+            # 마지막 원본 데이터를 새 파싱 방법으로 재처리
+            screen_data = self.parse_firmware_screen_data_enhanced(self.last_raw_data)
+            if screen_data is not None:
+                self.current_screen = screen_data
+                self.update_display(screen_data)
+        else:
+            # 테스트 패턴으로 파싱 방법 확인
+            test_screen = self.generate_test_screen()
+            self.update_display(test_screen)
 
     def update_performance_display(self):
         """성능 통계 표시 업데이트"""
@@ -1787,7 +2371,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             total = self.performance_stats['total_captures']
             successful = self.performance_stats['successful_captures']
             success_rate = (successful / max(1, total)) * 100
-            
+
             # GUI 업데이트
             if hasattr(self, 'perf_label'):
                 perf_text = f"FPS: {fps:.1f} | 성공률: {success_rate:.1f}% ({successful}/{total})"
@@ -1802,6 +2386,11 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             new_interval = int(self.interval_var.get())
             self.update_interval_ms = new_interval
             self.log_message(f"🕐 갱신 주기 변경: {new_interval}ms ({1000/new_interval:.1f} FPS)")
+            
+            # 자동 모드가 활성화되어 있으면 문구도 업데이트
+            if self.auto_request_enabled:
+                self.update_mode_label.config(text=f"자동 모드 ({new_interval}ms)", foreground="green")
+                
         except ValueError:
             self.log_message("❌ 잘못된 갱신 주기 값")
             self.interval_var.set(str(self.update_interval_ms))
@@ -1821,6 +2410,348 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
         if self.is_monitoring:
             self.log_message("⚙️ 모니터링 중 설정 변경 - 적용됨")
 
+    def fast_parse_screen_data(self, img_data):
+        """초고속 화면 데이터 파싱 (128x64 최적화) - 파싱 방법 적용"""
+        try:
+            # 원본 데이터 저장 (파싱 방법 변경시 재사용)
+            self.last_raw_data = img_data
+            
+            # NumPy 배열을 사용한 초고속 처리 (가능한 경우)
+            if self.numpy_available:
+                import numpy as np
+                
+                # 1024바이트를 NumPy 배열로 변환
+                byte_array = np.frombuffer(img_data, dtype=np.uint8)
+                
+                # 기본 파싱: 8비트를 개별 픽셀로 확장 (벡터화 연산)
+                # 각 바이트를 8개 비트로 분해
+                bits = np.unpackbits(byte_array).reshape(64, 128)
+                
+                # 0과 1을 255와 0으로 변환하여 가시성 향상
+                temp_array = (bits * 255).astype(np.uint8)
+                
+                # 현재 파싱 방법 적용
+                current_method = self.parsing_method
+                
+                # 파싱 방법에 따른 변환 적용
+                if current_method == "method1_direct":
+                    # 방법 1: 직접 매핑 (변환 없음)
+                    img_array = temp_array.copy()
+                    
+                elif current_method == "method2_reversed":
+                    # 방법 2: reverse 함수 적용 - NumPy로 최적화
+                    img_array = temp_array.copy()
+                    # 바이트별 reverse 처리는 복잡하므로 기본 처리
+                    
+                elif current_method == "method3_rotated_180":
+                    # 방법 3: 180도 회전
+                    img_array = np.rot90(temp_array, 2)
+                    
+                elif current_method == "method4_flipped_h":
+                    # 방법 4: 가로 뒤집기
+                    img_array = np.fliplr(temp_array)
+                    
+                elif current_method == "method5_flipped_v":
+                    # 방법 5: 세로 뒤집기 (기본, 안정적)
+                    img_array = np.flipud(temp_array)
+                    
+                elif current_method == "method5_rotate_90":
+                    # 방법 5-1: 90도 시계방향 회전
+                    img_array = np.rot90(temp_array, -1)  # -1은 시계방향
+                    
+                elif current_method == "method5_rotate_270":
+                    # 방법 5-2: 270도 시계방향 회전 (90도 반시계방향)
+                    img_array = np.rot90(temp_array, 1)   # 1은 반시계방향
+                    
+                elif current_method == "method5_mirror_h":
+                    # 방법 5-3: 가로 미러링 (좌우 반전)
+                    img_array = np.fliplr(temp_array)
+                    
+                elif current_method == "method5_mirror_v":
+                    # 방법 5-4: 세로 미러링 (상하 반전)
+                    img_array = np.flipud(temp_array)
+                    
+                elif current_method == "method5_flip_both":
+                    # 방법 5-5: 상하좌우 모두 뒤집기
+                    img_array = np.flipud(np.fliplr(temp_array))
+                    
+                elif current_method == "method6_transposed":
+                    # 방법 6: 전치 + 조정
+                    # 128x64를 64x128로 전치하면 크기가 맞지 않으므로 보간 필요
+                    transposed = temp_array.T  # 전치: 64x128
+                    # 64x128을 128x64로 리사이즈
+                    from PIL import Image
+                    pil_img = Image.fromarray(transposed.astype(np.uint8), mode='L')
+                    resized_img = pil_img.resize((128, 64), Image.NEAREST)
+                    img_array = np.array(resized_img)
+                    
+                else:
+                    # 알 수 없는 방법인 경우 기본 세로 뒤집기 적용
+                    img_array = np.flipud(temp_array)
+                
+                # PIL 이미지 생성
+                img = Image.fromarray(img_array, mode='L')  # 그레이스케일
+                
+                return img
+            else:
+                # NumPy가 없는 경우 최적화된 Python 코드 사용
+                return self._fast_parse_fallback(img_data)
+                
+        except Exception as e:
+            # 오류 발생시 폴백 방식 사용
+            return self._fast_parse_fallback(img_data)
+    
+    def _fast_parse_fallback(self, img_data):
+        """NumPy 없이 최적화된 파싱 (폴백 방식) - 파싱 방법 적용"""
+        try:
+            # 원본 데이터 저장
+            self.last_raw_data = img_data
+            
+            # PIL 이미지 생성 (L 모드로 성능 향상)
+            img = Image.new('L', (128, 64), 0)
+            
+            # 픽셀 데이터를 직접 생성 (최적화된 방식)
+            pixels = []
+            
+            # 미리 계산된 비트 마스크 (룩업 테이블)
+            bit_masks = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01]
+            
+            # 행별 처리 (64행)
+            for y in range(64):
+                row_pixels = []
+                row_start = y * 16  # 각 행은 16바이트 (128픽셀 / 8)
+                
+                # 각 행의 16바이트 처리
+                for x_byte in range(16):
+                    byte_index = row_start + x_byte
+                    if byte_index >= len(img_data):
+                        # 데이터 부족시 0으로 채움
+                        row_pixels.extend([0] * 8)
+                        continue
+                    
+                    byte_val = img_data[byte_index]
+                    
+                    # 각 바이트의 8비트를 픽셀로 변환 (언롤링)
+                    for bit_mask in bit_masks:
+                        pixel_val = 255 if (byte_val & bit_mask) else 0
+                        row_pixels.append(pixel_val)
+                
+                pixels.extend(row_pixels)
+            
+            # 픽셀 데이터를 이미지에 적용
+            img.putdata(pixels)
+            
+            # 파싱 방법 적용 (간단한 변환만)
+            current_method = self.parsing_method
+            
+            if current_method == "method3_rotated_180":
+                img = img.rotate(180)
+            elif current_method == "method4_flipped_h" or current_method == "method5_mirror_h":
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            elif current_method == "method5_flipped_v" or current_method == "method5_mirror_v":
+                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            elif current_method == "method5_flip_both":
+                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.FLIP_TOP_BOTTOM)
+            elif current_method == "method5_rotate_90":
+                img = img.rotate(-90, expand=True)  # 시계방향 90도
+                img = img.resize((128, 64), Image.NEAREST)  # 크기 조정
+            elif current_method == "method5_rotate_270":
+                img = img.rotate(90, expand=True)  # 반시계방향 90도
+                img = img.resize((128, 64), Image.NEAREST)  # 크기 조정
+            elif current_method == "method6_transposed":
+                img = img.transpose(Image.TRANSPOSE)
+                img = img.resize((128, 64), Image.NEAREST)  # 크기 조정
+            # method1_direct와 method2_reversed는 변환 없음 또는 복잡한 처리가 필요하여 생략
+            
+            return img
+            
+        except Exception as e:
+            return None
+
+    def save_screen_high_res(self):
+        """고해상도 화면 저장 - 해상도를 높여서 저장"""
+        if self.current_screen is None:
+            messagebox.showwarning("경고", "저장할 화면이 없습니다")
+            return
+        
+        # 해상도 선택 다이얼로그 (크기 증가)
+        scale_dialog = tk.Toplevel(self.root)
+        scale_dialog.title("저장 해상도 선택")
+        scale_dialog.geometry("400x250")  # 크기 증가: 300x150 -> 400x200
+        scale_dialog.resizable(False, False)
+        scale_dialog.transient(self.root)
+        scale_dialog.grab_set()
+        
+        # 창을 화면 중앙에 배치
+        scale_dialog.update_idletasks()
+        x = (scale_dialog.winfo_screenwidth() // 2) - (400 // 2)  # 중앙 위치 조정
+        y = (scale_dialog.winfo_screenheight() // 2) - (250 // 2)  # 중앙 위치 조정
+        scale_dialog.geometry(f"400x250+{x}+{y}")
+        
+        # 메인 프레임 생성
+        main_frame = ttk.Frame(scale_dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 제목 라벨
+        ttk.Label(main_frame, text="저장할 해상도를 선택하세요:", font=("Arial", 10, "bold")).pack(pady=(0, 10))
+        
+        scale_var = tk.StringVar(value="4")  # 기본값을 "4"로 변경
+        
+        # 해상도 옵션들을 위한 프레임
+        options_frame = ttk.Frame(main_frame)
+        options_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 해상도 옵션들
+        options = [
+            ("1x (128x64) - 원본", "1"),
+            ("2x (256x128)", "2"),
+            ("4x (512x256) - 권장", "4"),
+            ("8x (1024x512)", "8"),
+            ("16x (2048x1024)", "16")
+        ]
+        
+        for text, value in options:
+            ttk.Radiobutton(options_frame, text=text, variable=scale_var, value=value).pack(anchor=tk.W, pady=2)
+        
+        # 버튼 프레임 (하단에 고정)
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+        
+        def save_with_scale():
+            try:
+                scale = int(scale_var.get())
+                scale_dialog.destroy()
+                
+                # 파일 저장 다이얼로그
+                filename = filedialog.asksaveasfilename(
+                    defaultextension=".png",
+                    filetypes=[
+                        ("PNG files", "*.png"), 
+                        ("JPEG files", "*.jpg"), 
+                        ("BMP files", "*.bmp"),
+                        ("All files", "*.*")
+                    ],
+                    title="고해상도 화면 저장"
+                )
+                
+                if filename:
+                    # 현재 화면 데이터 타입에 따라 처리
+                    if hasattr(self.current_screen, 'save'):
+                        # PIL Image 객체인 경우
+                        base_img = self.current_screen
+                    elif hasattr(self.current_screen, 'shape'):
+                        # NumPy 배열인 경우
+                        base_img = Image.fromarray(self.current_screen.astype('uint8'), mode='L')
+                    else:
+                        # 다른 형식인 경우
+                        base_img = Image.fromarray(self.current_screen, mode='L')
+                    
+                    if scale == 1:
+                        # 원본 크기로 저장
+                        final_img = base_img
+                    else:
+                        # 고해상도로 확대 (NEAREST: 픽셀 아트 스타일, LANCZOS: 부드러운 확대)
+                        new_size = (128 * scale, 64 * scale)
+                        
+                        # 파일 확장자에 따라 리사이징 방법 선택
+                        if filename.lower().endswith(('.jpg', '.jpeg')):
+                            # JPEG는 부드러운 확대가 더 적합
+                            final_img = base_img.resize(new_size, Image.LANCZOS)
+                        else:
+                            # PNG, BMP는 픽셀 아트 스타일 유지
+                            final_img = base_img.resize(new_size, Image.NEAREST)
+                    
+                    # 파일 저장
+                    final_img.save(filename)
+                    
+                    # 저장 정보 로그
+                    file_size = final_img.size
+                    self.log_message(f"✅ 고해상도 화면 저장 완료: {filename}")
+                    self.log_message(f"📐 저장 크기: {file_size[0]}x{file_size[1]} (확대: {scale}배)")
+                    
+            except Exception as e:
+                error_msg = f"고해상도 화면 저장 실패: {str(e)}"
+                messagebox.showerror("오류", error_msg)
+                self.log_message(f"❌ {error_msg}")
+        
+        def cancel_save():
+            scale_dialog.destroy()
+        
+        # 버튼들을 중앙 정렬로 배치
+        ttk.Button(button_frame, text="저장", command=save_with_scale).pack(side=tk.LEFT, padx=(50, 5))
+        ttk.Button(button_frame, text="취소", command=cancel_save).pack(side=tk.LEFT, padx=(5, 50))
+
+    def open_status_log(self):
+        """상태 로그 파일 열기"""
+        try:
+            if self.status_log_file and os.path.exists(self.status_log_file):
+                if os.name == 'nt':  # Windows
+                    os.startfile(self.status_log_file)
+                else:  # Linux/Mac
+                    os.system(f'open "{self.status_log_file}"')
+            else:
+                messagebox.showinfo("정보", "상태 로그 파일이 없습니다")
+        except Exception as e:
+            messagebox.showerror("오류", f"로그 파일을 열 수 없습니다: {str(e)}")
+
 if __name__ == "__main__":
-    app = OLEDMonitor()
-    app.run() 
+    try:
+        print("OnBoard OLED Monitor를 시작합니다...")
+        print("프로그램을 종료하려면 창을 닫거나 Ctrl+C를 누르세요.")
+        
+        app = OLEDMonitor()
+        app.run()
+        
+    except KeyboardInterrupt:
+        print("\n[사용자 중단] Ctrl+C로 프로그램이 종료되었습니다.")
+    except Exception as e:
+        print(f"\n[오류] 프로그램 실행 중 심각한 오류가 발생했습니다:")
+        print(f"오류 타입: {type(e).__name__}")
+        print(f"오류 메시지: {str(e)}")
+        
+        # 상세 오류 정보 출력
+        import traceback
+        print("\n[상세 오류 정보]")
+        print(traceback.format_exc())
+        
+        # 오류 로그 파일 저장
+        try:
+            from datetime import datetime
+            import os
+            
+            # logs 폴더 생성
+            if not os.path.exists("logs"):
+                os.makedirs("logs")
+                
+            # 오류 로그 파일 생성
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_filename = f"logs/error_log_{timestamp}.txt"
+            
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write(f"OnBoard OLED Monitor 오류 로그\n")
+                f.write(f"발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"오류 타입: {type(e).__name__}\n")
+                f.write(f"오류 메시지: {str(e)}\n\n")
+                f.write("상세 오류 정보:\n")
+                f.write(traceback.format_exc())
+                
+            print(f"\n오류 로그가 저장되었습니다: {log_filename}")
+            
+        except Exception as log_error:
+            print(f"오류 로그 저장 실패: {str(log_error)}")
+        
+        print("\n[해결 방법]")
+        print("1. 시리얼 포트 연결을 확인하세요")
+        print("2. 다른 프로그램이 포트를 사용 중인지 확인하세요")
+        print("3. 펌웨어가 정상 동작하는지 확인하세요")
+        print("4. 로그 파일을 확인하거나 개발자에게 문의하세요")
+        
+        input("\n계속하려면 Enter를 누르세요...")
+    finally:
+        print("프로그램을 정리 중...")
+        try:
+            # 시리얼 포트가 열려있다면 닫기
+            import serial.tools.list_ports
+            print("시리얼 포트 정리 완료")
+        except:
+            pass

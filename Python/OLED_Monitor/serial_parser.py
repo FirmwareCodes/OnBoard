@@ -11,6 +11,7 @@ import struct
 import numpy as np
 from typing import Dict, Optional, Tuple
 import re
+from datetime import datetime
 
 class SerialDataParser:
     """시리얼 데이터 파싱 클래스"""
@@ -104,46 +105,99 @@ class SerialDataParser:
     
     def parse_status_data(self, data: bytes) -> Optional[Dict]:
         """
-        상태 데이터 파싱
+        상태 데이터 파싱 - 로그 지원 강화 및 RAW 데이터 포함
         
         Args:
             data: 시리얼에서 받은 상태 데이터
             
         Returns:
-            Dict: 파싱된 상태 정보 또는 None
+            Dict: 파싱된 상태 정보 또는 None (RAW 데이터 포함)
         """
         try:
-            data_str = data.decode('utf-8', errors='ignore')
+            # 원본 RAW 데이터 보존
+            raw_data = data
             
-            # 상태 정보 파싱 패턴
+            data_str = data.decode('utf-8', errors='ignore').strip()
+            
+            # STATUS: 형식인지 확인
+            if not data_str.startswith('STATUS:'):
+                return None
+            
+            # STATUS: 제거
+            status_part = data_str[7:]  # "STATUS:" 제거
+            
+            # 각 항목 파싱
+            status_info = {
+                'timestamp': datetime.now().strftime('%H:%M:%S'), 
+                'source': 'firmware',
+                'raw_data': raw_data,  # 원본 RAW 데이터 추가
+                'raw_string': data_str  # 문자열 형태 RAW 데이터도 추가
+            }
+            
+            # 상태 데이터 파싱 패턴
             patterns = {
-                'battery': r'BAT:(\d+)%',
-                'timer': r'TIMER:(\d{2}:\d{2})',
+                'battery': r'BAT:(\d+)%?',
+                'timer': r'TIMER:(\d{1,2}:\d{2})',
                 'status': r'STATUS:(\w+)',
                 'l1_connected': r'L1:(\d)',
                 'l2_connected': r'L2:(\d)'
             }
             
-            status = {}
-            
-            for key, pattern in patterns.items():
-                match = re.search(pattern, data_str)
-                if match:
-                    value = match.group(1)
+            items = status_part.split(',')
+            for item in items:
+                if ':' in item:
+                    key, value = item.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
                     
-                    # 데이터 타입 변환
-                    if key == 'battery':
-                        status[key] = int(value)
-                    elif key in ['l1_connected', 'l2_connected']:
-                        status[key] = bool(int(value))
-                    else:
-                        status[key] = value
-                        
-            return status if status else None
+                    if key == 'BAT':
+                        # 배터리: "75%" -> 75 또는 "75" -> 75
+                        try:
+                            status_info['battery'] = int(value.replace('%', ''))
+                        except ValueError:
+                            status_info['battery'] = 0
+                    elif key == 'TIMER':
+                        # 타이머: "05:30"
+                        status_info['timer'] = value
+                    elif key == 'STATUS':
+                        # 상태: "RUNNING"
+                        status_info['status'] = value
+                    elif key == 'L1':
+                        # L1 연결: "1" -> True
+                        status_info['l1_connected'] = (value == '1')
+                    elif key == 'L2':
+                        # L2 연결: "0" -> False
+                        status_info['l2_connected'] = (value == '1')
+            
+            # 필수 필드가 없으면 기본값 설정
+            if 'battery' not in status_info:
+                status_info['battery'] = 0
+            if 'timer' not in status_info:
+                status_info['timer'] = '00:00'
+            if 'status' not in status_info:
+                status_info['status'] = 'UNKNOWN'
+            if 'l1_connected' not in status_info:
+                status_info['l1_connected'] = False
+            if 'l2_connected' not in status_info:
+                status_info['l2_connected'] = False
+            
+            return status_info
             
         except Exception as e:
             print(f"상태 데이터 파싱 오류: {e}")
-            return None
+            # 파싱 실패시에도 기본 구조 반환 (RAW 데이터 포함)
+            return {
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                'source': 'firmware_error',
+                'battery': 0,
+                'timer': '00:00',
+                'status': 'ERROR',
+                'l1_connected': False,
+                'l2_connected': False,
+                'error': str(e),
+                'raw_data': data,  # 오류시에도 원본 데이터 포함
+                'raw_string': data.decode('utf-8', errors='ignore') if isinstance(data, bytes) else str(data)
+            }
     
     def create_test_screen_data(self, pattern: str = "checkerboard") -> np.ndarray:
         """
@@ -185,6 +239,22 @@ class SerialDataParser:
                             
         return img
     
+    def create_test_status_data(self) -> Dict:
+        """테스트용 상태 데이터 생성"""
+        import random
+        
+        statuses = ['STANDBY', 'RUNNING', 'SETTING', 'COOLING']
+        
+        return {
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'source': 'test_generator',
+            'battery': random.randint(20, 100),
+            'timer': f"{random.randint(0, 59):02d}:{random.randint(0, 59):02d}",
+            'status': random.choice(statuses),
+            'l1_connected': random.choice([True, False]),
+            'l2_connected': random.choice([True, False])
+        }
+    
     def validate_screen_data(self, data: np.ndarray) -> bool:
         """
         화면 데이터 유효성 검증
@@ -202,6 +272,36 @@ class SerialDataParser:
             return False
             
         if data.dtype != np.uint8:
+            return False
+            
+        return True
+    
+    def validate_status_data(self, status: Dict) -> bool:
+        """
+        상태 데이터 유효성 검증
+        
+        Args:
+            status: 상태 데이터
+            
+        Returns:
+            bool: 유효성 여부
+        """
+        if not isinstance(status, dict):
+            return False
+            
+        required_fields = ['battery', 'timer', 'status', 'l1_connected', 'l2_connected']
+        
+        for field in required_fields:
+            if field not in status:
+                return False
+                
+        # 배터리 범위 검증
+        if not (0 <= status['battery'] <= 100):
+            return False
+            
+        # 타이머 형식 검증
+        timer_pattern = r'^\d{1,2}:\d{2}$'
+        if not re.match(timer_pattern, status['timer']):
             return False
             
         return True
@@ -243,7 +343,8 @@ class SerialDataParser:
             elif data_str.startswith('ERROR:'):
                 return 'error', {'message': data_str[6:]}
             elif data_str.startswith('STATUS:'):
-                return 'status', self.parse_status_data(data) or {}
+                status_data = self.parse_status_data(data)
+                return 'status', status_data or {}
             elif self.SCREEN_START_PATTERN in data:
                 screen_data = self.parse_screen_data(data)
                 return 'screen', {'data': screen_data}
@@ -260,6 +361,11 @@ class ProtocolManager:
         self.parser = SerialDataParser()
         self.command_queue = []
         self.response_handlers = {}
+        self.status_logger = None  # 상태 로거 참조
+        
+    def set_status_logger(self, logger):
+        """상태 로거 설정"""
+        self.status_logger = logger
         
     def register_handler(self, response_type: str, handler):
         """응답 타입별 핸들러 등록"""
@@ -268,6 +374,10 @@ class ProtocolManager:
     def process_data(self, data: bytes):
         """수신된 데이터 처리"""
         response_type, response_data = self.parser.decode_response(data)
+        
+        # 상태 데이터인 경우 로거에 기록
+        if response_type == 'status' and self.status_logger and response_data:
+            self.status_logger.log_status(response_data)
         
         if response_type in self.response_handlers:
             self.response_handlers[response_type](response_data)
@@ -279,9 +389,16 @@ class ProtocolManager:
         try:
             cmd_data = self.parser.encode_command(command, params)
             serial_port.write(cmd_data)
+            
+            # 명령어 전송 로그
+            if self.status_logger:
+                self.status_logger.log_event("COMMAND", f"{command} 전송")
+                
             return True
         except Exception as e:
             print(f"명령어 전송 오류: {e}")
+            if self.status_logger:
+                self.status_logger.log_event("ERROR", f"명령어 전송 오류: {e}")
             return False
 
 if __name__ == "__main__":
@@ -292,11 +409,19 @@ if __name__ == "__main__":
     test_screen = parser.create_test_screen_data("checkerboard")
     print(f"테스트 화면 데이터 생성: {test_screen.shape}")
     
+    # 테스트 상태 데이터 생성
+    test_status = parser.create_test_status_data()
+    print(f"테스트 상태 데이터: {test_status}")
+    
     # 명령어 인코딩 테스트
     cmd = parser.encode_command("GET_SCREEN")
     print(f"명령어 인코딩: {cmd}")
     
     # 상태 데이터 파싱 테스트
-    test_status = b"BAT:75%,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0"
-    status = parser.parse_status_data(test_status)
-    print(f"상태 파싱 결과: {status}") 
+    test_status_raw = b"STATUS:BAT:75%,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0"
+    status = parser.parse_status_data(test_status_raw)
+    print(f"상태 파싱 결과: {status}")
+    
+    # 유효성 검증 테스트
+    print(f"화면 데이터 유효성: {parser.validate_screen_data(test_screen)}")
+    print(f"상태 데이터 유효성: {parser.validate_status_data(status)}") 
