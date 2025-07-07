@@ -32,6 +32,7 @@ import json
 from datetime import datetime
 import os
 import re
+import signal
 
 # 프로젝트 내 모듈 import
 try:
@@ -506,56 +507,390 @@ class OLEDMonitor:
             self.disconnect_device()
             
     def connect_device(self):
-        """디바이스 연결 - RAW 데이터 로깅 포함"""
+        """디바이스 연결 - UI 멈춤 방지를 위한 완전 비동기 처리"""
         try:
             port = self.port_var.get()
             baud = int(self.baud_var.get())
             
-            self.serial_port = serial.Serial(port, baud, timeout=1)
-            self.is_connected = True
+            # 포트 유효성 검사
+            if not port or port.strip() == "":
+                messagebox.showerror("오류", "포트를 선택하세요")
+                return
+                
+            # 연결 진행 상태 표시
+            self.connect_btn.config(text="연결 중...", state="disabled")
+            self.status_label.config(text="연결 시도 중...", foreground="orange")
             
-            self.connect_btn.config(text="연결 해제")
-            self.status_label.config(text="연결됨", foreground="green")
+            # 진행 상황 표시를 위한 프로그레스 바 생성
+            self.show_connection_progress()
             
-            self.log_message(f"포트 {port}에 연결됨 (보드레이트: {baud})")
+            # GUI 즉시 업데이트
+            self.root.update_idletasks()
             
-            # 연결 이벤트 로그 (연결 정보를 RAW 데이터로 기록)
-            connection_info = f"PORT:{port},BAUD:{baud},TIMEOUT:1"
-            self.write_status_log_event("CONNECT", f"포트 {port} 연결 (보드레이트: {baud})", connection_info.encode())
+            # 완전 비동기 연결을 위한 스레드 사용
+            connection_thread = threading.Thread(
+                target=self._connect_device_async, 
+                args=(port, baud),
+                daemon=True
+            )
+            connection_thread.start()
+            
+            # 연결 상태 모니터링 스레드 시작
+            self._start_connection_monitor()
             
         except Exception as e:
-            error_msg = f"연결할 수 없습니다: {str(e)}"
-            messagebox.showerror("연결 오류", error_msg)
-            self.log_message(f"연결 오류: {str(e)}")
+            self._connection_failed(f"연결 설정 오류: {str(e)}")
+    
+    def show_connection_progress(self):
+        """연결 진행 상황 표시"""
+        if hasattr(self, 'progress_window'):
+            return  # 이미 열려있으면 무시
             
-            # 연결 실패 이벤트 로그 (오류 정보를 RAW 데이터로 기록)
-            error_info = f"PORT:{self.port_var.get()},BAUD:{self.baud_var.get()},ERROR:{str(e)}"
-            self.write_status_log_event("CONNECT_FAIL", f"연결 실패: {str(e)}", error_info.encode())
+        self.progress_window = tk.Toplevel(self.root)
+        self.progress_window.title("연결 중...")
+        self.progress_window.geometry("300x120")
+        self.progress_window.resizable(False, False)
+        self.progress_window.transient(self.root)
+        self.progress_window.grab_set()
+        
+        # 창을 화면 중앙에 배치
+        self.progress_window.update_idletasks()
+        x = (self.progress_window.winfo_screenwidth() // 2) - (150)
+        y = (self.progress_window.winfo_screenheight() // 2) - (60)
+        self.progress_window.geometry(f"300x120+{x}+{y}")
+        
+        # 진행 상황 라벨
+        self.progress_label = tk.Label(self.progress_window, text="시리얼 포트 연결 중...", 
+                                     font=("Arial", 10))
+        self.progress_label.pack(pady=10)
+        
+        # 프로그레스 바
+        from tkinter import ttk
+        self.progress_bar = ttk.Progressbar(self.progress_window, mode='indeterminate')
+        self.progress_bar.pack(pady=10, padx=20, fill=tk.X)
+        self.progress_bar.start()
+        
+        # 취소 버튼
+        cancel_btn = ttk.Button(self.progress_window, text="취소", 
+                              command=self.cancel_connection)
+        cancel_btn.pack(pady=5)
+        
+        # 연결 시작 시간 기록
+        self.connection_start_time = time.time()
+        
+    def cancel_connection(self):
+        """연결 취소"""
+        self.connection_cancelled = True
+        self.hide_connection_progress()
+        self._connection_failed("사용자가 연결을 취소했습니다")
+        
+    def hide_connection_progress(self):
+        """연결 진행 상황 창 숨기기"""
+        if hasattr(self, 'progress_window'):
+            try:
+                self.progress_window.destroy()
+                delattr(self, 'progress_window')
+            except:
+                pass
+                
+    def _start_connection_monitor(self):
+        """연결 상태 모니터링 시작"""
+        self.connection_cancelled = False
+        self.connection_timeout = 10.0  # 10초 타임아웃
+        self._monitor_connection()
+        
+    def _monitor_connection(self):
+        """연결 상태 모니터링"""
+        if hasattr(self, 'connection_start_time'):
+            elapsed = time.time() - self.connection_start_time
             
+            # 타임아웃 체크
+            if elapsed > self.connection_timeout:
+                self.connection_cancelled = True
+                self.hide_connection_progress()
+                self._connection_failed("연결 시간 초과 (10초)")
+                return
+                
+            # 진행 상황 업데이트
+            if hasattr(self, 'progress_label'):
+                remaining = int(self.connection_timeout - elapsed)
+                self.progress_label.config(text=f"시리얼 포트 연결 중... ({remaining}초 남음)")
+            
+            # 연결 완료 또는 취소 체크
+            if not self.connection_cancelled and not self.is_connected:
+                # 100ms 후 다시 체크
+                self.root.after(100, self._monitor_connection)
+            else:
+                self.hide_connection_progress()
+                
+    def _connect_device_async(self, port, baud):
+        """비동기 디바이스 연결 처리 - UI 멈춤 방지 강화"""
+        try:
+            # 취소 체크
+            if getattr(self, 'connection_cancelled', False):
+                return
+                
+            # 1단계: 시리얼 포트 생성 (논블로킹)
+            self.root.after(0, lambda: self._update_progress("시리얼 포트 설정 중..."))
+            
+            self.serial_port = serial.Serial()
+            self.serial_port.port = port
+            self.serial_port.baudrate = baud
+            self.serial_port.timeout = 0.1  # 매우 짧은 타임아웃
+            self.serial_port.write_timeout = 0.2
+            self.serial_port.inter_byte_timeout = 0.05
+            
+            # 추가 시리얼 포트 설정
+            self.serial_port.rtscts = False
+            self.serial_port.dsrdtr = False
+            self.serial_port.xonxoff = False
+            
+            # 취소 체크
+            if getattr(self, 'connection_cancelled', False):
+                return
+                
+            # 2단계: 포트 열기 (논블로킹 시도)
+            self.root.after(0, lambda: self._update_progress("포트 열기 중..."))
+            
+            # 포트 열기를 여러 번 시도
+            max_open_attempts = 5
+            for attempt in range(max_open_attempts):
+                if getattr(self, 'connection_cancelled', False):
+                    return
+                    
+                try:
+                    self.serial_port.open()
+                    if self.serial_port.is_open:
+                        break
+                except serial.SerialException as e:
+                    if attempt == max_open_attempts - 1:
+                        raise e
+                    time.sleep(0.1)  # 100ms 대기 후 재시도
+                    
+            # 포트 열기 확인
+            if not self.serial_port.is_open:
+                raise Exception("포트 열기 실패")
+                
+            # 3단계: 초기 버퍼 클리어
+            self.root.after(0, lambda: self._update_progress("초기 설정 중..."))
+            
+            # 짧은 안정화 시간
+            time.sleep(0.1)
+            
+            # 버퍼 클리어 (논블로킹)
+            clear_attempts = 0
+            while clear_attempts < 3 and not getattr(self, 'connection_cancelled', False):
+                if self.serial_port.in_waiting > 0:
+                    old_data = self.serial_port.read(self.serial_port.in_waiting)
+                    if len(old_data) > 0:
+                        self.root.after(0, lambda size=len(old_data): 
+                                      self.log_message(f"🧹 초기 버퍼 클리어: {size} bytes"))
+                time.sleep(0.05)
+                clear_attempts += 1
+                
+            # 4단계: 연결 테스트 (선택적)
+            self.root.after(0, lambda: self._update_progress("연결 테스트 중..."))
+            
+            test_success = False
+            if not getattr(self, 'connection_cancelled', False):
+                try:
+                    # 빠른 PING 테스트
+                    self.serial_port.write(b'PING\n')
+                    self.serial_port.flush()
+                    
+                    # 빠른 응답 확인 (최대 1초)
+                    ping_response = b''
+                    test_start = time.time()
+                    while time.time() - test_start < 1.0:
+                        if getattr(self, 'connection_cancelled', False):
+                            return
+                        if self.serial_port.in_waiting > 0:
+                            chunk = self.serial_port.read(self.serial_port.in_waiting)
+                            ping_response += chunk
+                            if b'PONG' in ping_response:
+                                test_success = True
+                                break
+                        time.sleep(0.01)
+                        
+                except Exception:
+                    # 테스트 실패해도 연결은 유지
+                    pass
+                    
+            # 취소 체크
+            if getattr(self, 'connection_cancelled', False):
+                if self.serial_port and self.serial_port.is_open:
+                    self.serial_port.close()
+                return
+                
+            # 연결 성공 처리
+            self.is_connected = True
+            
+            # GUI 업데이트를 메인 스레드에서 안전하게 수행
+            connection_info = {
+                'port': port,
+                'baud': baud,
+                'test_success': test_success,
+                'connection_time': time.time() - getattr(self, 'connection_start_time', time.time())
+            }
+            
+            self.root.after(0, lambda info=connection_info: self._connection_success_with_info(info))
+            
+        except Exception as e:
+            # 연결 실패 처리
+            error_msg = str(e)
+            
+            # 시리얼 포트 정리
+            if hasattr(self, 'serial_port') and self.serial_port:
+                try:
+                    if self.serial_port.is_open:
+                        self.serial_port.close()
+                except:
+                    pass
+                self.serial_port = None
+                
+            self.root.after(0, lambda msg=error_msg: self._connection_failed(msg))
+            
+    def _update_progress(self, message):
+        """진행 상황 업데이트"""
+        if hasattr(self, 'progress_label'):
+            self.progress_label.config(text=message)
+            
+    def _connection_success_with_info(self, info):
+        """연결 성공 처리 - 상세 정보 포함"""
+        try:
+            # 진행 상황 창 닫기
+            self.hide_connection_progress()
+            
+            self.connect_btn.config(text="연결 해제", state="normal")
+            self.status_label.config(text="연결됨", foreground="green")
+            
+            # 연결 정보 메시지 구성
+            test_msg = " (통신 확인됨)" if info['test_success'] else " (통신 미확인)"
+            time_msg = f" ({info['connection_time']:.1f}초)"
+            
+            self.log_message(f"✅ 포트 {info['port']}에 연결됨 (보드레이트: {info['baud']}){test_msg}{time_msg}")
+            
+            # 연결 이벤트 로그
+            connection_details = f"PORT:{info['port']},BAUD:{info['baud']},TIMEOUT:0.1,TEST:{info['test_success']}"
+            self.write_status_log_event("CONNECT", f"포트 {info['port']} 연결 (보드레이트: {info['baud']})", connection_details.encode())
+            
+            # 연결 성공 알림
+            messagebox.showinfo("연결 성공", f"포트 {info['port']}에 성공적으로 연결되었습니다!")
+            
+        except Exception as e:
+            self.log_message(f"❌ 연결 후 처리 오류: {str(e)}")
+    
+    def _connection_failed(self, error_msg):
+        """연결 실패 처리 - 강화된 오류 처리"""
+        try:
+            # 진행 상황 창 닫기
+            self.hide_connection_progress()
+            
+            # 시리얼 포트 정리
+            if hasattr(self, 'serial_port') and self.serial_port:
+                try:
+                    if self.serial_port.is_open:
+                        self.serial_port.close()
+                except:
+                    pass
+                self.serial_port = None
+            
+            self.is_connected = False
+            self.connect_btn.config(text="연결", state="normal")
+            self.status_label.config(text="연결 실패", foreground="red")
+            
+            # 사용자에게 오류 메시지 표시
+            error_display = f"연결할 수 없습니다: {error_msg}"
+            self.log_message(f"❌ {error_display}")
+            
+            # 상세한 해결 방법 제시
+            if "사용자가 연결을 취소" in error_msg:
+                self.log_message("ℹ️ 연결이 취소되었습니다")
+            elif "연결 시간 초과" in error_msg:
+                self.log_message("💡 해결방법:")
+                self.log_message("   1. 디바이스 전원과 USB 케이블을 확인하세요")
+                self.log_message("   2. 다른 USB 포트를 사용해보세요")
+                self.log_message("   3. 보드레이트를 확인하세요")
+                messagebox.showerror("연결 실패", "연결 시간이 초과되었습니다.\n디바이스 연결 상태를 확인해주세요.")
+            elif "PermissionError" in error_msg or "액세스가 거부" in error_msg:
+                self.log_message("💡 해결방법: 다른 프로그램이 포트를 사용 중일 수 있습니다. 시리얼 모니터를 종료하세요.")
+                messagebox.showerror("연결 실패", "포트에 액세스할 수 없습니다.\n다른 프로그램에서 포트를 사용 중일 수 있습니다.")
+            elif "FileNotFoundError" in error_msg or "찾을 수 없습니다" in error_msg:
+                self.log_message("💡 해결방법: 포트가 존재하지 않습니다. 디바이스 연결을 확인하세요.")
+                messagebox.showerror("연결 실패", "선택한 포트를 찾을 수 없습니다.\n디바이스 연결을 확인해주세요.")
+            else:
+                messagebox.showerror("연결 실패", f"연결에 실패했습니다:\n{error_msg}")
+                
+        except Exception as e:
+            self.log_message(f"❌ 연결 실패 처리 오류: {str(e)}")
+    
     def disconnect_device(self):
-        """디바이스 연결 해제 - RAW 데이터 로깅 포함"""
+        """디바이스 연결 해제 - 안전한 비동기 처리"""
+        # 먼저 모니터링 중지
         if self.is_monitoring:
             self.stop_monitoring()
+            # 모니터링 완전 중지까지 대기 (비블로킹)
+            threading.Thread(target=self._async_disconnect, daemon=True).start()
+        else:
+            self._async_disconnect()
+    
+    def _async_disconnect(self):
+        """비동기 연결 해제 처리"""
+        try:
+            connection_info = ""
             
-        connection_info = ""
-        if self.serial_port:
-            # 연결 해제 전 연결 정보 수집
-            try:
-                port_info = f"PORT:{self.serial_port.port},BAUD:{self.serial_port.baudrate}"
-                connection_info = port_info
-            except:
-                connection_info = "PORT:UNKNOWN,BAUD:UNKNOWN"
-                
-            self.serial_port.close()
+            # 연결 정보 수집 (안전하게)
+            if self.serial_port:
+                try:
+                    if hasattr(self.serial_port, 'port') and hasattr(self.serial_port, 'baudrate'):
+                        port_info = f"PORT:{self.serial_port.port},BAUD:{self.serial_port.baudrate}"
+                        connection_info = port_info
+                except:
+                    connection_info = "PORT:UNKNOWN,BAUD:UNKNOWN"
+            
+            # 시리얼 포트 안전하게 닫기
+            if self.serial_port:
+                try:
+                    # 1. 펌웨어에 정지 명령 전송 (타임아웃 짧게)
+                    if self.serial_port.is_open:
+                        self.serial_port.write(b'STOP_MONITOR\n')
+                        self.serial_port.flush()
+                        time.sleep(0.1)  # 100ms 대기
+                    
+                    # 2. 포트 닫기
+                    if self.serial_port.is_open:
+                        self.serial_port.close()
+                        
+                    # 3. 포트 객체 정리
+                    self.serial_port = None
+                    
+                except Exception as close_error:
+                    # 포트 닫기 실패시에도 계속 진행
+                    self.root.after(0, lambda: self.log_message(f"⚠️ 포트 닫기 오류: {str(close_error)}"))
+                    self.serial_port = None
+            
+            # 연결 상태 업데이트 (메인 스레드에서 안전하게)
+            self.is_connected = False
+            self.root.after(0, self._update_disconnect_ui)
+            
+            # 로그 기록
+            self.root.after(0, lambda: self.log_message("✅ 연결이 안전하게 해제되었습니다"))
+            self.root.after(0, lambda: self.write_status_log_event("DISCONNECT", "연결 해제", connection_info.encode() if connection_info else None))
+            
+        except Exception as e:
+            # 연결 해제 실패시에도 상태는 업데이트
+            self.is_connected = False
             self.serial_port = None
-            
-        self.is_connected = False
-        self.connect_btn.config(text="연결")
-        self.status_label.config(text="연결 안됨", foreground="red")
-        self.log_message("연결이 해제되었습니다")
-        
-        # 연결 해제 이벤트 로그 (연결 정보를 RAW 데이터로 기록)
-        self.write_status_log_event("DISCONNECT", "연결 해제", connection_info.encode() if connection_info else None)
+            self.root.after(0, self._update_disconnect_ui)
+            self.root.after(0, lambda: self.log_message(f"⚠️ 연결 해제 중 오류: {str(e)}"))
+    
+    def _update_disconnect_ui(self):
+        """연결 해제 UI 업데이트 (메인 스레드에서 실행)"""
+        try:
+            self.connect_btn.config(text="연결", state="normal")
+            self.status_label.config(text="연결 안됨", foreground="red")
+        except Exception as e:
+            self.log_message(f"❌ UI 업데이트 오류: {str(e)}")
     
     def toggle_monitoring(self):
         """모니터링 시작/중지"""
@@ -569,7 +904,7 @@ class OLEDMonitor:
             self.stop_monitoring()
             
     def start_monitoring(self):
-        """모니터링 시작 - 최적화된 버전"""
+        """모니터링 시작 - 비블로킹 최적화 버전"""
         if not self.is_connected:
             messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
             return
@@ -584,66 +919,138 @@ class OLEDMonitor:
                 'fps_start_time': time.time()
             }
             
-            # 시리얼 버퍼 클리어 (빠른 시작)
-            self.clear_serial_buffers()
-            
-            # 1단계: 간단한 연결 테스트 (빠른 응답 확인)
-            self.serial_port.write(b'PING\n')
-            self.serial_port.flush()
-            
-            quick_response = self.wait_for_response(1000)  # 1초 대기
-            if not quick_response or b'PONG' not in quick_response:
-                self.log_message("⚠️ 펌웨어 연결 테스트 실패 - 계속 진행")
-            else:
-                self.log_message("✅ 펌웨어 연결 확인 완료")
-            
-            # 2단계: 모니터링 모드 설정 (간소화)
-            command = f"SET_UPDATE_MODE:REQUEST_RESPONSE,{self.update_interval_ms}\n"
-            self.serial_port.write(command.encode())
-            self.serial_port.flush()
-            
-            response = self.wait_for_response(1000)
-            if response and b'OK:Request-Response mode set' in response:
-                self.log_message(f"✅ 펌웨어 요청-응답 모드 설정 완료 (주기: {self.update_interval_ms}ms)")
-            else:
-                self.log_message("⚠️ 펌웨어 모드 설정 응답 확인 실패 - 계속 진행")
-                
-            # 3단계: 모니터링 활성화 (간소화)
-            self.serial_port.write(b'START_MONITOR\n')
-            self.serial_port.flush()
-            
-            response = self.wait_for_response(1000)
-            if response and b'OK:Monitoring started' in response:
-                self.log_message("✅ 펌웨어 모니터링 활성화 완료")
-            else:
-                self.log_message("⚠️ 펌웨어 모니터링 활성화 응답 확인 실패 - 계속 진행")
-            
-            # 모니터링 플래그 설정
+            # 모니터링 플래그 먼저 설정 (빠른 시작)
             self.is_monitoring = True
             
-            # UI 업데이트 (ttk.Button 스타일 사용)
+            # UI 즉시 업데이트
             self.monitor_btn.config(text="모니터링 중지")
+            self.log_message("🚀 모니터링 시작 중...")
             
-            # 모니터링 모드에 따른 로그
-            mode_text = "자동 모드" if self.auto_request_enabled else "수동 모드"
-            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
-            self.log_message(f"🚀 요청-응답 기반 모니터링 시작 - {mode_text}{interval_text}")
-            
-            # 상태 로그에 모니터링 시작 이벤트 기록
-            self.write_status_log_event("START", f"모니터링 시작 - {mode_text}{interval_text}")
-            
-            # 캡처 스레드 시작 (높은 우선순위)
-            self.capture_thread = threading.Thread(target=self.capture_loop, daemon=True)
-            self.capture_thread.start()
-            
-            # 상태 모니터링 스레드 시작 (낮은 우선순위)
-            self.status_thread = threading.Thread(target=self.status_loop, daemon=True)
-            self.status_thread.start()
+            # 시리얼 버퍼 비동기 클리어
+            threading.Thread(target=self._async_start_monitoring, daemon=True).start()
             
         except Exception as e:
             self.log_message(f"❌ 모니터링 시작 오류: {str(e)}")
             self.is_monitoring = False
             self.monitor_btn.config(text="모니터링 시작")
+    
+    def _async_start_monitoring(self):
+        """비동기 모니터링 시작 처리"""
+        try:
+            # 1단계: 시리얼 버퍼 클리어 (비블로킹)
+            self._clear_serial_buffers_async()
+            
+            # 2단계: 펌웨어 설정 (타임아웃 단축)
+            self._setup_firmware_async()
+            
+            # 3단계: 스레드 시작
+            self._start_monitoring_threads()
+            
+            # 성공 로그
+            mode_text = "자동 모드" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            
+            self.root.after(0, lambda: self.log_message(f"✅ 모니터링 시작 완료 - {mode_text}{interval_text}"))
+            self.root.after(0, lambda: self.write_status_log_event("START", f"모니터링 시작 - {mode_text}{interval_text}"))
+            
+        except Exception as e:
+            # 실패시 모니터링 중지
+            self.is_monitoring = False
+            self.root.after(0, lambda: self.monitor_btn.config(text="모니터링 시작"))
+            self.root.after(0, lambda: self.log_message(f"❌ 모니터링 시작 실패: {str(e)}"))
+    
+    def _clear_serial_buffers_async(self):
+        """비동기 시리얼 버퍼 클리어"""
+        if not self.serial_port:
+            return
+            
+        try:
+            # 빠른 버퍼 클리어 (최대 3회 시도)
+            for attempt in range(3):
+                if self.serial_port.in_waiting > 0:
+                    old_data = self.serial_port.read(self.serial_port.in_waiting)
+                    if len(old_data) > 0:
+                        self.root.after(0, lambda size=len(old_data): 
+                                      self.log_message(f"🧹 버퍼 클리어: {size} bytes"))
+                else:
+                    break  # 버퍼가 비어있으면 종료
+                time.sleep(0.05)  # 50ms 대기
+            
+            # 출력 버퍼 플러시
+            self.serial_port.flush()
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.log_message(f"⚠️ 버퍼 클리어 오류: {str(e)}"))
+    
+    def _setup_firmware_async(self):
+        """비동기 펌웨어 설정"""
+        try:
+            # 1. 간단한 연결 테스트 (짧은 타임아웃)
+            self.serial_port.write(b'PING\n')
+            self.serial_port.flush()
+            
+            ping_response = self._wait_for_response_quick(500)  # 0.5초 타임아웃
+            if ping_response and b'PONG' in ping_response:
+                self.root.after(0, lambda: self.log_message("✅ 펌웨어 연결 확인"))
+            else:
+                self.root.after(0, lambda: self.log_message("⚠️ 펌웨어 응답 없음 - 계속 진행"))
+            
+            # 2. 모니터링 모드 설정 (짧은 타임아웃)
+            command = f"SET_UPDATE_MODE:REQUEST_RESPONSE,{self.update_interval_ms}\n"
+            self.serial_port.write(command.encode())
+            self.serial_port.flush()
+            
+            mode_response = self._wait_for_response_quick(500)
+            if mode_response and b'OK' in mode_response:
+                self.root.after(0, lambda: self.log_message("✅ 펌웨어 모드 설정 완료"))
+            
+            # 3. 모니터링 활성화 (짧은 타임아웃)
+            self.serial_port.write(b'START_MONITOR\n')
+            self.serial_port.flush()
+            
+            start_response = self._wait_for_response_quick(500)
+            if start_response and b'OK' in start_response:
+                self.root.after(0, lambda: self.log_message("✅ 펌웨어 모니터링 활성화"))
+                
+        except Exception as e:
+            self.root.after(0, lambda: self.log_message(f"⚠️ 펌웨어 설정 오류: {str(e)} - 계속 진행"))
+    
+    def _wait_for_response_quick(self, timeout_ms):
+        """빠른 응답 대기 (블로킹 방지용)"""
+        try:
+            timeout_seconds = timeout_ms / 1000.0
+            start_time = time.time()
+            response_data = b''
+            
+            while time.time() - start_time < timeout_seconds:
+                if self.serial_port.in_waiting > 0:
+                    chunk = self.serial_port.read(self.serial_port.in_waiting)
+                    response_data += chunk
+                    if b'\n' in response_data:
+                        break
+                else:
+                    time.sleep(0.01)  # 10ms 대기
+            
+            return response_data if response_data else None
+            
+        except Exception:
+            return None
+    
+    def _start_monitoring_threads(self):
+        """모니터링 스레드 시작"""
+        try:
+            # 캡처 스레드 시작 (높은 우선순위)
+            if self.capture_thread is None or not self.capture_thread.is_alive():
+                self.capture_thread = threading.Thread(target=self.capture_loop, daemon=True)
+                self.capture_thread.start()
+            
+            # 상태 모니터링 스레드 시작 (낮은 우선순위)
+            if self.status_thread is None or not self.status_thread.is_alive():
+                self.status_thread = threading.Thread(target=self.status_loop, daemon=True)
+                self.status_thread.start()
+                
+        except Exception as e:
+            raise Exception(f"스레드 시작 실패: {str(e)}")
     
     def stop_monitoring(self):
         """모니터링 중지 - 최적화된 안전한 종료"""
@@ -1040,9 +1447,13 @@ class OLEDMonitor:
             return False
     
     def status_loop(self):
-        """상태 모니터링 루프 - 요청-응답 방식으로 전환 및 로그 기록 추가"""
+        """상태 모니터링 루프 - BAT ADC 처리 최적화 및 무한루프 방지"""
         status_request_interval = 5.0  # 5초마다 상태 요청
         last_status_request = 0
+        consecutive_errors = 0  # 연속 오류 카운터
+        max_consecutive_errors = 3  # 최대 연속 오류 허용
+        status_timeout_count = 0  # 상태 타임아웃 카운터
+        max_status_timeouts = 5  # 최대 상태 타임아웃 허용
         
         while self.is_monitoring:
             try:
@@ -1053,40 +1464,149 @@ class OLEDMonitor:
                     # GET_STATUS 명령어로 상태 정보 요청
                     if self.is_connected and self.serial_port:
                         try:
+                            # 시리얼 버퍼 클리어 (무한루프 방지)
+                            if self.serial_port.in_waiting > 0:
+                                old_data = self.serial_port.read(self.serial_port.in_waiting)
+                                if len(old_data) > 100:  # 너무 많은 데이터가 쌓여있으면 경고
+                                    self.write_status_log_event("WARNING", f"과도한 버퍼 데이터: {len(old_data)} bytes")
+                            
+                            # 상태 요청 전송 (타임아웃 설정)
                             self.serial_port.write(b'GET_STATUS\n')
                             self.serial_port.flush()
                             
-                            # 응답 대기 및 처리
-                            response = self.wait_for_response(1000)
+                            # 응답 대기 및 처리 (짧은 타임아웃으로 블로킹 방지)
+                            response = self.wait_for_response(800)  # 800ms로 단축
                             if response:
-                                status_data = self.parse_firmware_status_data(response)
+                                # BAT ADC 안전 파싱
+                                status_data = self._safe_parse_status_data(response)
                                 if status_data:
-                                    # GUI 업데이트
+                                    # GUI 업데이트 (비동기)
                                     self.root.after(0, lambda data=status_data: self.update_status_display(data))
                                     
-                                    # 상태 로그에 기록
-                                    self.write_status_log(status_data)
+                                    # 상태 로그에 기록 (안전한 방식)
+                                    try:
+                                        self.write_status_log(status_data)
+                                    except Exception as log_error:
+                                        # 로그 기록 실패해도 모니터링은 계속
+                                        pass
                                     
+                                    consecutive_errors = 0  # 성공시 오류 카운터 리셋
+                                    status_timeout_count = 0  # 타임아웃 카운터 리셋
                                     last_status_request = current_time
                                 else:
-                                    # 파싱 실패시 테스트 데이터로 대체
-                                    test_status = self.generate_test_status_data()
+                                    # 파싱 실패시 테스트 데이터로 대체 (BAT ADC 포함)
+                                    test_status = self._generate_safe_test_status()
                                     self.root.after(0, lambda data=test_status: self.update_status_display(data))
+                                    consecutive_errors += 1
                                     
                             else:
-                                # 응답 없음 - 연결 상태 문제일 수 있음
-                                self.write_status_log_event("WARNING", "상태 응답 없음 - 연결 확인 필요")
+                                # 응답 없음 - 타임아웃 카운터 증가
+                                status_timeout_count += 1
+                                if status_timeout_count <= max_status_timeouts:
+                                    self.write_status_log_event("WARNING", f"상태 응답 없음 ({status_timeout_count}/{max_status_timeouts})")
+                                consecutive_errors += 1
                                 
                         except Exception as status_error:
-                            self.write_status_log_event("ERROR", f"상태 요청 오류: {str(status_error)}")
+                            error_msg = str(status_error)
+                            # BAT ADC 관련 오류 특별 처리
+                            if "BAT_ADC" in error_msg or "parse" in error_msg.lower():
+                                self.write_status_log_event("ERROR", f"BAT ADC 파싱 오류: {error_msg}")
+                                # 안전한 테스트 데이터로 대체
+                                safe_status = self._generate_safe_test_status()
+                                self.root.after(0, lambda data=safe_status: self.update_status_display(data))
+                            else:
+                                self.write_status_log_event("ERROR", f"상태 요청 오류: {error_msg}")
+                            consecutive_errors += 1
+                            
+                        # 연속 오류가 너무 많으면 잠시 대기
+                        if consecutive_errors >= max_consecutive_errors:
+                            self.write_status_log_event("WARNING", f"연속 오류 {consecutive_errors}회 발생, 대기 중...")
+                            time.sleep(3)  # 3초 대기 (단축)
+                            consecutive_errors = 0  # 리셋
+                            
+                        # 상태 타임아웃이 너무 많으면 상태 요청 중단
+                        if status_timeout_count >= max_status_timeouts:
+                            self.write_status_log_event("WARNING", "상태 요청 일시 중단 (과도한 타임아웃)")
+                            time.sleep(10)  # 10초 대기 후 재시도
+                            status_timeout_count = 0
                             
                     last_status_request = current_time
                 
-                time.sleep(1)  # 1초 간격으로 루프 실행
+                # 루프 대기 시간 (CPU 효율성)
+                time.sleep(0.5)  # 0.5초 간격으로 단축 (기존 1초)
                 
             except Exception as e:
-                self.write_status_log_event("ERROR", f"상태 루프 오류: {str(e)}")
-                time.sleep(2)
+                error_msg = str(e)
+                self.write_status_log_event("ERROR", f"상태 루프 오류: {error_msg}")
+                consecutive_errors += 1
+                
+                # BAT ADC 관련 심각한 오류시 상태 루프 일시 중단
+                if "BAT_ADC" in error_msg or consecutive_errors >= max_consecutive_errors:
+                    time.sleep(5)  # 5초 대기
+                    consecutive_errors = 0
+                else:
+                    time.sleep(1)  # 1초 대기
+    
+    def _safe_parse_status_data(self, response):
+        """BAT ADC 안전 파싱 (타임아웃 및 예외 처리 강화)"""
+        try:
+            # 파싱 시간 제한 (3초)
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("상태 파싱 타임아웃")
+            
+            # 윈도우에서는 signal.alarm이 지원되지 않으므로 조건부 처리
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(3)  # 3초 타임아웃
+            except (AttributeError, OSError):
+                # 윈도우나 신호 처리가 지원되지 않는 환경
+                pass
+            
+            try:
+                # 기존 파싱 함수 호출
+                result = self.parse_firmware_status_data(response)
+                
+                # BAT ADC 값 검증 및 보정
+                if result and 'bat_adc' in result:
+                    bat_adc = result['bat_adc']
+                    # ADC 값 범위 검증 (0-4095, 12-bit ADC)
+                    if not isinstance(bat_adc, int) or bat_adc < 0 or bat_adc > 4095:
+                        result['bat_adc'] = 0  # 잘못된 값은 0으로 보정
+                        self.write_status_log_event("WARNING", f"BAT ADC 값 보정: {bat_adc} -> 0")
+                
+                return result
+                
+            finally:
+                try:
+                    signal.alarm(0)  # 타임아웃 해제
+                except (AttributeError, OSError):
+                    pass
+                
+        except TimeoutError:
+            self.write_status_log_event("ERROR", "상태 파싱 타임아웃 - 안전 모드로 전환")
+            return self._generate_safe_test_status()
+        except Exception as e:
+            self.write_status_log_event("ERROR", f"안전 파싱 오류: {str(e)}")
+            return self._generate_safe_test_status()
+    
+    def _generate_safe_test_status(self):
+        """안전한 테스트 상태 데이터 생성 (BAT ADC 포함)"""
+        import random
+        
+        return {
+            'battery': random.randint(20, 100),
+            'timer': f"{random.randint(0, 59):02d}:{random.randint(0, 59):02d}",
+            'status': 'STANDBY',  # 안전한 기본 상태
+            'l1_connected': False,  # 안전한 기본값
+            'l2_connected': False,  # 안전한 기본값
+            'bat_adc': random.randint(0, 4095),  # 유효한 ADC 범위
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'source': 'safe_test_data',
+            'raw_data': b'STATUS:BAT:75%,TIMER:05:30,STATUS:STANDBY,L1:0,L2:0,BAT_ADC:2048',
+            'raw_string': 'STATUS:BAT:75%,TIMER:05:30,STATUS:STANDBY,L1:0,L2:0,BAT_ADC:2048'
+        }
     
     def generate_test_status_data(self):
         """테스트용 상태 데이터 생성"""
@@ -1100,6 +1620,7 @@ class OLEDMonitor:
             'status': random.choice(statuses),
             'l1_connected': random.choice([True, False]),
             'l2_connected': random.choice([True, False]),
+            'bat_adc': random.randint(0, 4095),  # 12-bit ADC 값
             'timestamp': datetime.now().strftime('%H:%M:%S'),
             'source': 'test_data'
         }
@@ -1590,19 +2111,47 @@ class OLEDMonitor:
             self.log_message(f"상태 요청 실패: {str(e)}")
     
     def parse_firmware_status_data(self, response):
-        """펌웨어에서 받은 상태 데이터 파싱 - RAW 데이터 포함"""
+        """펌웨어에서 받은 상태 데이터 파싱 - BAT ADC 안전 처리 및 무한루프 방지"""
         try:
+            # 파싱 시간 제한 (응답 없음 방지)
+            start_parse_time = time.time()
+            max_parse_time = 2.0  # 2초 파싱 시간 제한
+            
             # 강화된 시리얼 파서 사용 (RAW 데이터 지원)
             if self.serial_parser:
-                return self.serial_parser.parse_status_data(response)
+                try:
+                    parsed_data = self.serial_parser.parse_status_data(response)
+                    if parsed_data:
+                        # 파싱 시간 체크
+                        if time.time() - start_parse_time > max_parse_time:
+                            self.write_status_log_event("WARNING", "시리얼 파서 타임아웃")
+                            return None
+                        return parsed_data
+                except Exception as parser_error:
+                    self.write_status_log_event("ERROR", f"시리얼 파서 오류: {str(parser_error)}")
+                    # 파서 오류시 기본 파싱으로 폴백
             
-            # 폴백: 기본 파싱 (RAW 데이터 포함)
+            # 폴백: 기본 파싱 (RAW 데이터 포함, 안전 처리)
             if isinstance(response, bytes):
                 raw_data = response
-                data_str = response.decode('utf-8', errors='ignore').strip()
+                try:
+                    data_str = response.decode('utf-8', errors='ignore').strip()
+                except UnicodeDecodeError:
+                    # 디코딩 실패시 안전한 처리
+                    data_str = str(response, errors='replace').strip()
             else:
                 data_str = str(response).strip()
-                raw_data = data_str.encode('utf-8')
+                raw_data = data_str.encode('utf-8', errors='ignore')
+            
+            # 파싱 시간 체크
+            if time.time() - start_parse_time > max_parse_time:
+                self.write_status_log_event("WARNING", "기본 파싱 타임아웃")
+                return None
+            
+            # 데이터 길이 검증 (과도한 데이터 방지)
+            if len(data_str) > 1000:  # 1KB 제한
+                self.write_status_log_event("WARNING", f"과도한 데이터 크기: {len(data_str)} chars")
+                data_str = data_str[:1000]  # 잘라내기
             
             # STATUS: 형식인지 확인
             if not data_str.startswith('STATUS:'):
@@ -1611,7 +2160,7 @@ class OLEDMonitor:
             # STATUS: 제거
             status_part = data_str[7:]  # "STATUS:" 제거
             
-            # 각 항목 파싱
+            # 각 항목 파싱 (안전한 방식)
             status_info = {
                 'timestamp': datetime.now().strftime('%H:%M:%S'), 
                 'source': 'firmware',
@@ -1619,29 +2168,101 @@ class OLEDMonitor:
                 'raw_string': data_str  # 문자열 형태도 추가
             }
             
-            items = status_part.split(',')
-            for item in items:
-                if ':' in item:
-                    key, value = item.split(':', 1)
+            # 안전한 파싱을 위한 아이템 분할
+            try:
+                items = status_part.split(',')
+                # 최대 아이템 수 제한 (무한루프 방지)
+                if len(items) > 20:
+                    self.write_status_log_event("WARNING", f"과도한 상태 아이템 수: {len(items)}")
+                    items = items[:20]  # 최대 20개로 제한
+                
+                parse_count = 0  # 파싱 카운터
+                max_parse_count = 50  # 최대 파싱 횟수 제한
+                
+                for item in items:
+                    parse_count += 1
+                    if parse_count > max_parse_count:
+                        self.write_status_log_event("WARNING", "파싱 횟수 제한 도달")
+                        break
                     
-                    if key == 'BAT':
-                        # 배터리: "75%" -> 75
-                        try:
-                            status_info['battery'] = int(value.replace('%', ''))
-                        except ValueError:
-                            status_info['battery'] = 0
-                    elif key == 'TIMER':
-                        # 타이머: "05:30"
-                        status_info['timer'] = value
-                    elif key == 'STATUS':
-                        # 상태: "RUNNING"
-                        status_info['status'] = value
-                    elif key == 'L1':
-                        # L1 연결: "1" -> True
-                        status_info['l1_connected'] = (value == '1')
-                    elif key == 'L2':
-                        # L2 연결: "0" -> False
-                        status_info['l2_connected'] = (value == '1')
+                    # 파싱 시간 체크
+                    if time.time() - start_parse_time > max_parse_time:
+                        self.write_status_log_event("WARNING", "파싱 시간 초과")
+                        break
+                    
+                    item = item.strip()  # 공백 제거
+                    if not item or ':' not in item:
+                        continue
+                    
+                    try:
+                        key, value = item.split(':', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # 키와 값 길이 검증
+                        if len(key) > 50 or len(value) > 100:
+                            self.write_status_log_event("WARNING", f"과도한 키/값 길이: {key}={value}")
+                            continue
+                        
+                        if key == 'BAT':
+                            # 배터리: "75%" -> 75
+                            try:
+                                battery_str = value.replace('%', '').strip()
+                                battery_val = int(battery_str)
+                                # 배터리 범위 검증
+                                if 0 <= battery_val <= 100:
+                                    status_info['battery'] = battery_val
+                                else:
+                                    status_info['battery'] = max(0, min(100, battery_val))  # 범위 보정
+                            except (ValueError, TypeError):
+                                status_info['battery'] = 0
+                                self.write_status_log_event("WARNING", f"배터리 값 파싱 오류: {value}")
+                                
+                        elif key == 'TIMER':
+                            # 타이머: "05:30"
+                            if len(value) <= 10:  # 길이 제한
+                                status_info['timer'] = value
+                            else:
+                                status_info['timer'] = '00:00'
+                                
+                        elif key == 'STATUS':
+                            # 상태: "RUNNING"
+                            if len(value) <= 20:  # 길이 제한
+                                status_info['status'] = value
+                            else:
+                                status_info['status'] = 'UNKNOWN'
+                                
+                        elif key == 'L1':
+                            # L1 연결: "1" -> True
+                            status_info['l1_connected'] = (value == '1')
+                            
+                        elif key == 'L2':
+                            # L2 연결: "0" -> False
+                            status_info['l2_connected'] = (value == '1')
+                            
+                        elif key == 'BAT_ADC':
+                            # BAT ADC: "123" -> 123 (안전한 파싱)
+                            try:
+                                adc_val = int(value)
+                                # ADC 범위 검증 (12-bit ADC: 0-4095)
+                                if 0 <= adc_val <= 4095:
+                                    status_info['bat_adc'] = adc_val
+                                else:
+                                    # 범위 벗어나면 보정
+                                    status_info['bat_adc'] = max(0, min(4095, adc_val))
+                                    self.write_status_log_event("WARNING", f"BAT ADC 값 보정: {adc_val} -> {status_info['bat_adc']}")
+                            except (ValueError, TypeError) as adc_error:
+                                status_info['bat_adc'] = 0
+                                self.write_status_log_event("WARNING", f"BAT ADC 파싱 오류: {value} ({str(adc_error)})")
+                                
+                    except Exception as item_error:
+                        # 개별 아이템 파싱 오류시 로그만 기록하고 계속 진행
+                        self.write_status_log_event("WARNING", f"아이템 파싱 오류: {item} ({str(item_error)})")
+                        continue
+                
+            except Exception as split_error:
+                self.write_status_log_event("ERROR", f"상태 데이터 분할 오류: {str(split_error)}")
+                return None
             
             # 필수 필드 기본값 설정
             if 'battery' not in status_info:
@@ -1654,11 +2275,20 @@ class OLEDMonitor:
                 status_info['l1_connected'] = False
             if 'l2_connected' not in status_info:
                 status_info['l2_connected'] = False
+            if 'bat_adc' not in status_info:
+                status_info['bat_adc'] = 0
+            
+            # 최종 파싱 시간 체크
+            parse_duration = time.time() - start_parse_time
+            if parse_duration > 1.0:  # 1초 이상 걸리면 경고
+                self.write_status_log_event("WARNING", f"파싱 시간 지연: {parse_duration:.2f}초")
             
             return status_info
             
         except Exception as e:
-            self.log_message(f"상태 데이터 파싱 오류: {str(e)}")
+            error_msg = str(e)
+            self.write_status_log_event("ERROR", f"상태 데이터 파싱 치명적 오류: {error_msg}")
+            
             # 오류시에도 RAW 데이터 포함하여 반환
             return {
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
@@ -1668,8 +2298,9 @@ class OLEDMonitor:
                 'status': 'ERROR',
                 'l1_connected': False,
                 'l2_connected': False,
-                'error': str(e),
-                'raw_data': response if isinstance(response, bytes) else str(response).encode('utf-8'),
+                'bat_adc': 0,
+                'error': error_msg,
+                'raw_data': response if isinstance(response, bytes) else str(response).encode('utf-8', errors='ignore'),
                 'raw_string': response.decode('utf-8', errors='ignore') if isinstance(response, bytes) else str(response)
             }
     
@@ -1740,11 +2371,15 @@ class OLEDMonitor:
             source_text = "🧪 테스트 데이터"
             source_color = "orange"
         
+        # BAT ADC 값 표시 추가
+        bat_adc_text = f"BAT ADC: {status_data.get('bat_adc', 'N/A')}"
+        
         status_text = f"""배터리: {status_data.get('battery', 'N/A')}%
 타이머: {status_data.get('timer', 'N/A')}
 상태: {status_data.get('status', 'N/A')}
 L1 연결: {'예' if status_data.get('l1_connected', False) else '아니오'}
 L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
+{bat_adc_text}
 업데이트: {status_data.get('timestamp', 'N/A')}
 데이터 소스: {source_text}
 """
@@ -2132,7 +2767,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             self.log_message(f"❌ 원격 제어 오류: {str(e)}")
     
     def remote_ping(self):
-        """연결 테스트"""
+        """연결 테스트 - 비동기 처리로 UI 멈춤 방지"""
         if not self.is_connected:
             messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
             return
@@ -2142,82 +2777,56 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             self.clear_serial_buffers()
             
             start_time = time.time()
-            self.serial_port.write(b'PING\n')
-            self.serial_port.flush()
             
-            # 응답 확인
-            response = self.wait_for_response(2000)  # 타임아웃 증가
-            elapsed_time = time.time() - start_time
+            # 비동기 PING 명령 전송
+            def handle_ping_response(response):
+                elapsed_time = time.time() - start_time
+                
+                if response and b'PONG' in response:
+                    self.log_message(f"✅ 연결 테스트 성공 (응답시간: {elapsed_time*1000:.1f}ms)")
+                elif response:
+                    response_str = response.decode('utf-8', errors='ignore').strip()
+                    self.log_message(f"⚠️ 연결 테스트 응답: {response_str}")
+                else:
+                    self.log_message("❌ 연결 테스트 응답 없음")
             
-            if response and b'PONG' in response:
-                self.log_message(f"✅ 연결 테스트 성공 (응답시간: {elapsed_time*1000:.1f}ms)")
-            elif response:
-                response_str = response.decode('utf-8', errors='ignore').strip()
-                self.log_message(f"⚠️ 연결 테스트 응답: {response_str}")
-            else:
-                self.log_message("❌ 연결 테스트 응답 없음")
+            # 비동기 명령 전송
+            self.send_command_async("PING", timeout_ms=2000, callback=handle_ping_response)
+            self.log_message("📡 연결 테스트 명령 전송 중...")
+                
+        except Exception as e:
+            self.log_message(f"❌ 연결 테스트 오류: {str(e)}")
+            
+    def test_connection(self):
+        """기본 연결 테스트 - 비동기 처리로 개선"""
+        if not self.is_connected:
+            messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
+            return
+            
+        try:
+            # 명령 전송 전 버퍼 클리어
+            self.clear_serial_buffers()
+            
+            # 비동기 연결 테스트
+            def handle_test_response(response):
+                if response:
+                    response_str = response.decode('utf-8', errors='ignore').strip()
+                    if 'PONG' in response_str:
+                        self.log_message(f"✅ 연결 테스트 성공: {response_str}")
+                    elif 'OnBoard LED Timer Ready' in response_str:
+                        self.log_message(f"✅ 연결 테스트 응답: {response_str}")
+                    else:
+                        self.log_message(f"⚠️ 연결 테스트 응답: {response_str}")
+                else:
+                    self.log_message("❌ 연결 테스트 응답 없음")
+            
+            # 비동기 PING 명령 전송
+            self.send_command_async("PING", timeout_ms=3000, callback=handle_test_response)
+            self.log_message("📡 기본 연결 테스트 시작...")
                 
         except Exception as e:
             self.log_message(f"❌ 연결 테스트 오류: {str(e)}")
     
-    def wait_for_response(self, timeout_ms=200):
-        """응답 대기 (최적화된 버전)"""
-        if not self.is_connected or not self.serial_port:
-            return None
-            
-        try:
-            timeout_seconds = timeout_ms / 1000.0
-            start_time = time.time()
-            response_data = b''
-            
-            while time.time() - start_time < timeout_seconds:
-                if self.serial_port.in_waiting > 0:
-                    # 한번에 모든 대기 중인 데이터 읽기
-                    chunk = self.serial_port.read(self.serial_port.in_waiting)
-                    response_data += chunk
-                    
-                    # 완전한 응답 라인 확인 (개행 문자 포함)
-                    if b'\n' in response_data:
-                        return response_data
-                else:
-                    # 매우 짧은 대기 (1ms)
-                    time.sleep(0.001)
-            
-            # 타임아웃 발생시에도 수신된 데이터가 있으면 반환
-            return response_data if response_data else None
-            
-        except Exception as e:
-            return None
-
-    def test_connection(self):
-        """기본 연결 테스트 (PING 명령어로 변경)"""
-        if not self.is_connected:
-            messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
-            return
-            
-        try:
-            # 명령 전송 전 버퍼 클리어
-            self.clear_serial_buffers()
-            
-            # PING 명령어로 변경 (더 안정적)
-            self.serial_port.write(b'PING\n')
-            self.serial_port.flush()
-            
-            response = self.wait_for_response(3000)  # 타임아웃 증가
-            if response:
-                response_str = response.decode('utf-8', errors='ignore').strip()
-                if 'PONG' in response_str:
-                    self.log_message(f"✅ 연결 테스트 성공: {response_str}")
-                elif 'OnBoard LED Timer Ready' in response_str:
-                    self.log_message(f"✅ 연결 테스트 응답: {response_str}")
-                else:
-                    self.log_message(f"⚠️ 연결 테스트 응답: {response_str}")
-            else:
-                self.log_message("❌ 연결 테스트 응답 없음")
-                
-        except Exception as e:
-            self.log_message(f"❌ 연결 테스트 오류: {str(e)}")
-
     def test_simple_screen(self):
         """간단한 화면 데이터 테스트 - 새로운 마커 형식 지원"""
         if not self.is_connected:

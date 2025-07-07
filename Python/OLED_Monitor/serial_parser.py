@@ -12,6 +12,7 @@ import numpy as np
 from typing import Dict, Optional, Tuple
 import re
 from datetime import datetime
+import time
 
 class SerialDataParser:
     """시리얼 데이터 파싱 클래스"""
@@ -105,7 +106,7 @@ class SerialDataParser:
     
     def parse_status_data(self, data: bytes) -> Optional[Dict]:
         """
-        상태 데이터 파싱 - 로그 지원 강화 및 RAW 데이터 포함
+        상태 데이터 파싱 - BAT ADC 안전 처리 및 무한루프 방지
         
         Args:
             data: 시리얼에서 받은 상태 데이터
@@ -114,10 +115,25 @@ class SerialDataParser:
             Dict: 파싱된 상태 정보 또는 None (RAW 데이터 포함)
         """
         try:
+            # 파싱 시간 제한 (무한루프 방지)
+            start_time = time.time()
+            max_parse_time = 1.5  # 1.5초 파싱 시간 제한
+            
             # 원본 RAW 데이터 보존
             raw_data = data
             
-            data_str = data.decode('utf-8', errors='ignore').strip()
+            # 데이터 크기 검증 (과도한 데이터 방지)
+            if len(data) > 2048:  # 2KB 제한
+                data = data[:2048]  # 잘라내기
+            
+            try:
+                data_str = data.decode('utf-8', errors='ignore').strip()
+            except UnicodeDecodeError:
+                data_str = str(data, errors='replace').strip()
+            
+            # 파싱 시간 체크
+            if time.time() - start_time > max_parse_time:
+                return None
             
             # STATUS: 형식인지 확인
             if not data_str.startswith('STATUS:'):
@@ -126,50 +142,115 @@ class SerialDataParser:
             # STATUS: 제거
             status_part = data_str[7:]  # "STATUS:" 제거
             
-            # 각 항목 파싱
+            # 각 항목 파싱 (안전한 방식)
             status_info = {
                 'timestamp': datetime.now().strftime('%H:%M:%S'), 
                 'source': 'firmware',
                 'raw_data': raw_data,  # 원본 RAW 데이터 추가
-                'raw_string': data_str  # 문자열 형태 RAW 데이터도 추가
+                'raw_string': data_str  # 문자열 형태도 추가
             }
             
-            # 상태 데이터 파싱 패턴
-            patterns = {
-                'battery': r'BAT:(\d+)%?',
-                'timer': r'TIMER:(\d{1,2}:\d{2})',
-                'status': r'STATUS:(\w+)',
-                'l1_connected': r'L1:(\d)',
-                'l2_connected': r'L2:(\d)'
-            }
-            
-            items = status_part.split(',')
-            for item in items:
-                if ':' in item:
-                    key, value = item.split(':', 1)
-                    key = key.strip()
-                    value = value.strip()
+            try:
+                # 안전한 분할 처리
+                items = status_part.split(',')
+                
+                # 최대 아이템 수 제한 (무한루프 방지)
+                if len(items) > 15:
+                    items = items[:15]  # 최대 15개로 제한
+                
+                parse_count = 0
+                max_parse_count = 30  # 최대 파싱 횟수 제한
+                
+                for item in items:
+                    parse_count += 1
+                    if parse_count > max_parse_count:
+                        break
                     
-                    if key == 'BAT':
-                        # 배터리: "75%" -> 75 또는 "75" -> 75
-                        try:
-                            status_info['battery'] = int(value.replace('%', ''))
-                        except ValueError:
-                            status_info['battery'] = 0
-                    elif key == 'TIMER':
-                        # 타이머: "05:30"
-                        status_info['timer'] = value
-                    elif key == 'STATUS':
-                        # 상태: "RUNNING"
-                        status_info['status'] = value
-                    elif key == 'L1':
-                        # L1 연결: "1" -> True
-                        status_info['l1_connected'] = (value == '1')
-                    elif key == 'L2':
-                        # L2 연결: "0" -> False
-                        status_info['l2_connected'] = (value == '1')
+                    # 파싱 시간 체크
+                    if time.time() - start_time > max_parse_time:
+                        break
+                    
+                    item = item.strip()
+                    if not item or ':' not in item:
+                        continue
+                    
+                    try:
+                        # 안전한 키-값 분할
+                        parts = item.split(':', 1)
+                        if len(parts) != 2:
+                            continue
+                            
+                        key, value = parts
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # 키와 값 길이 검증
+                        if len(key) > 20 or len(value) > 50:
+                            continue
+                        
+                        # 각 필드별 안전한 파싱
+                        if key == 'BAT':
+                            # 배터리 파싱 (안전한 처리)
+                            try:
+                                battery_str = value.replace('%', '').strip()
+                                if battery_str.isdigit():
+                                    battery_val = int(battery_str)
+                                    status_info['battery'] = max(0, min(100, battery_val))
+                                else:
+                                    status_info['battery'] = 0
+                            except (ValueError, TypeError):
+                                status_info['battery'] = 0
+                                
+                        elif key == 'TIMER':
+                            # 타이머 파싱 (형식 검증)
+                            if len(value) <= 8 and ':' in value:
+                                status_info['timer'] = value
+                            else:
+                                status_info['timer'] = '00:00'
+                                
+                        elif key == 'STATUS':
+                            # 상태 파싱 (길이 제한)
+                            if len(value) <= 15:
+                                status_info['status'] = value
+                            else:
+                                status_info['status'] = 'UNKNOWN'
+                                
+                        elif key == 'L1':
+                            # L1 연결 상태 (안전한 변환)
+                            status_info['l1_connected'] = (value == '1')
+                            
+                        elif key == 'L2':
+                            # L2 연결 상태 (안전한 변환)
+                            status_info['l2_connected'] = (value == '1')
+                            
+                        elif key == 'BAT_ADC':
+                            # BAT ADC 파싱 (강화된 안전 처리)
+                            try:
+                                # 숫자 문자열 검증
+                                if value.isdigit() and len(value) <= 5:  # 최대 5자리
+                                    adc_val = int(value)
+                                    # 12-bit ADC 범위 검증 (0-4095)
+                                    if 0 <= adc_val <= 4095:
+                                        status_info['bat_adc'] = adc_val
+                                    else:
+                                        # 범위 벗어나면 보정
+                                        status_info['bat_adc'] = max(0, min(4095, adc_val))
+                                else:
+                                    # 잘못된 형식
+                                    status_info['bat_adc'] = 0
+                            except (ValueError, TypeError, OverflowError):
+                                # 모든 변환 오류 처리
+                                status_info['bat_adc'] = 0
+                                
+                    except Exception as item_error:
+                        # 개별 아이템 파싱 오류시 계속 진행
+                        continue
+                
+            except Exception as split_error:
+                # 분할 오류시 기본값 반환
+                pass
             
-            # 필수 필드가 없으면 기본값 설정
+            # 필수 필드 기본값 설정
             if 'battery' not in status_info:
                 status_info['battery'] = 0
             if 'timer' not in status_info:
@@ -180,24 +261,20 @@ class SerialDataParser:
                 status_info['l1_connected'] = False
             if 'l2_connected' not in status_info:
                 status_info['l2_connected'] = False
+            if 'bat_adc' not in status_info:
+                status_info['bat_adc'] = 0
+            
+            # 최종 파싱 시간 체크
+            parse_duration = time.time() - start_time
+            if parse_duration > 0.5:  # 0.5초 이상 걸리면 경고
+                print(f"⚠️ 시리얼 파서 지연: {parse_duration:.2f}초")
             
             return status_info
             
         except Exception as e:
-            print(f"상태 데이터 파싱 오류: {e}")
-            # 파싱 실패시에도 기본 구조 반환 (RAW 데이터 포함)
-            return {
-                'timestamp': datetime.now().strftime('%H:%M:%S'),
-                'source': 'firmware_error',
-                'battery': 0,
-                'timer': '00:00',
-                'status': 'ERROR',
-                'l1_connected': False,
-                'l2_connected': False,
-                'error': str(e),
-                'raw_data': data,  # 오류시에도 원본 데이터 포함
-                'raw_string': data.decode('utf-8', errors='ignore') if isinstance(data, bytes) else str(data)
-            }
+            # 모든 예외를 안전하게 처리
+            print(f"❌ 시리얼 파서 오류: {str(e)}")
+            return None
     
     def create_test_screen_data(self, pattern: str = "checkerboard") -> np.ndarray:
         """
@@ -247,12 +324,15 @@ class SerialDataParser:
         
         return {
             'timestamp': datetime.now().strftime('%H:%M:%S'),
-            'source': 'test_generator',
+            'source': 'test_data',
             'battery': random.randint(20, 100),
             'timer': f"{random.randint(0, 59):02d}:{random.randint(0, 59):02d}",
             'status': random.choice(statuses),
             'l1_connected': random.choice([True, False]),
-            'l2_connected': random.choice([True, False])
+            'l2_connected': random.choice([True, False]),
+            'bat_adc': random.randint(0, 4095),  # 12-bit ADC 값
+            'raw_data': b'STATUS:BAT:75%,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0,BAT_ADC:2048',
+            'raw_string': 'STATUS:BAT:75%,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0,BAT_ADC:2048'
         }
     
     def validate_screen_data(self, data: np.ndarray) -> bool:

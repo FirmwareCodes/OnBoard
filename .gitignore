@@ -5,3 +5,5 @@
 *.elf
 *.map
 *.ninja_log
+/.cursor/rules/onboard.mdc
+*.txt

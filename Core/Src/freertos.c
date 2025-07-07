@@ -1091,7 +1091,7 @@ void UART_SendScreenData(void)
   }
 
   // 전송 완료 후 안정화 딜레이
-  osDelay(10);
+  osDelay(1);
 
   // 데이터 종료 마커
   const char *data_end_marker = "\n<<DATA_END>>\n";
@@ -1100,9 +1100,6 @@ void UART_SendScreenData(void)
   // 화면 데이터 종료 헤더 전송 (개행 문자 추가)
   const char *footer = "<<SCREEN_END>>\n\n";
   HAL_UART_Transmit(&huart1, (uint8_t *)footer, strlen(footer), 1000);
-
-  // 화면 데이터 전송 완료 후 15ms 대기 (수신 측 완전 안정화)
-  osDelay(15);
 
   // 뮤텍스 해제
   osMutexRelease(UartMutexHandle);
@@ -1178,8 +1175,8 @@ void UART_SendStatusData(void)
 
   // 상태 정보 문자열 생성
   snprintf(status_buffer, sizeof(status_buffer),
-           "STATUS:BAT:%d%%,TIMER:%02d:%02d,STATUS:%s,L1:%d,L2:%d\n",
-           battery_percent, timer_minutes, timer_seconds, status_str, l1_connected, l2_connected);
+           "STATUS:BAT:%d%%,TIMER:%02d:%02d,STATUS:%s,L1:%d,L2:%d,BAT_ADC:%d\n",
+           battery_percent, timer_minutes, timer_seconds, status_str, l1_connected, l2_connected, Adc_State.VBat_ADC_Value);
 
   HAL_UART_Transmit(&huart1, (uint8_t *)status_buffer, strlen(status_buffer), 1000);
 

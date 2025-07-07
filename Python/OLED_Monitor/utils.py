@@ -51,11 +51,11 @@ class StatusLogger:
         try:
             with self.log_lock:
                 with open(self.status_log_file, 'w', encoding='utf-8') as f:
-                    f.write("=" * 120 + "\n")
+                    f.write("=" * 140 + "\n")
                     f.write(f"OnBoard OLED Monitor 상태 로그 - {datetime.now().strftime('%Y년 %m월 %d일')}\n")
-                    f.write("=" * 120 + "\n")
-                    f.write("시간\t\t\t배터리\t타이머\t\t상태\t\tL1\tL2\t비고\t\t\tRAW 데이터\n")
-                    f.write("-" * 120 + "\n")
+                    f.write("=" * 140 + "\n")
+                    f.write("시간\t\t\t배터리\t타이머\t\t상태\t\tL1\tL2\tBAT_ADC\t비고\t\t\tRAW 데이터\n")
+                    f.write("-" * 140 + "\n")
         except Exception as e:
             print(f"상태 로그 헤더 작성 실패: {e}")
     
@@ -86,19 +86,21 @@ class StatusLogger:
                 status = status_data.get('status', 'N/A')
                 l1_connected = '연결' if status_data.get('l1_connected', False) else '해제'
                 l2_connected = '연결' if status_data.get('l2_connected', False) else '해제'
+                bat_adc = status_data.get('bat_adc', 'N/A')  # BAT ADC 값 추가
                 source = status_data.get('source', 'unknown')
                 
-                # RAW 데이터 추출 (최대 50자까지만 표시)
+                # RAW 데이터 추출 (ASCII 값 그대로 저장)
                 raw_data = status_data.get('raw_data', '')
                 if isinstance(raw_data, bytes):
-                    raw_display = raw_data.decode('utf-8', errors='ignore')[:50] + '...' if len(raw_data) > 50 else raw_data.decode('utf-8', errors='ignore')
+                    # ASCII 값 그대로 디코딩
+                    raw_display = raw_data.decode('ascii', errors='replace')[:100] + '...' if len(raw_data) > 100 else raw_data.decode('ascii', errors='replace')
                 elif isinstance(raw_data, str):
-                    raw_display = raw_data[:50] + '...' if len(raw_data) > 50 else raw_data
+                    raw_display = raw_data[:100] + '...' if len(raw_data) > 100 else raw_data
                 else:
-                    raw_display = str(raw_data)[:50] + '...' if len(str(raw_data)) > 50 else str(raw_data)
+                    raw_display = str(raw_data)[:100] + '...' if len(str(raw_data)) > 100 else str(raw_data)
                 
-                # 상태 로그 라인 구성 (RAW 데이터 포함)
-                log_line = f"{timestamp}\t{battery}%\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{source}\t\t{raw_display}\n"
+                # 상태 로그 라인 구성 (BAT ADC 및 RAW 데이터 포함)
+                log_line = f"{timestamp}\t{battery}%\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{bat_adc}\t{source}\t{raw_display}\n"
                 
                 # 파일에 기록
                 with open(self.status_log_file, 'a', encoding='utf-8') as f:
@@ -112,7 +114,7 @@ class StatusLogger:
             print(f"상태 로그 기록 실패: {e}")
     
     def log_raw_data(self, data_type: str, raw_data: Any):
-        """RAW 데이터를 별도 파일에 상세 기록"""
+        """RAW 데이터를 별도 파일에 상세 기록 - ASCII 값 그대로 저장"""
         if not self.raw_log_file:
             return
             
@@ -120,37 +122,43 @@ class StatusLogger:
             with self.log_lock:
                 timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                 
-                # 데이터 타입별 처리
+                # 데이터 타입별 처리 - ASCII 값 그대로 저장
                 if isinstance(raw_data, bytes):
                     data_length = len(raw_data)
+                    # ASCII 값 그대로 디코딩
+                    ascii_data = raw_data.decode('ascii', errors='replace')
+                    # HEX 값도 함께 저장
                     hex_data = raw_data.hex().upper()
+                    
                     # 긴 데이터는 줄바꿈 처리
-                    if len(hex_data) > 80:
-                        hex_display = hex_data[:80] + f"... (총 {data_length} bytes)"
+                    if len(ascii_data) > 80:
+                        ascii_display = ascii_data[:80] + f"... (총 {data_length} bytes)"
                     else:
-                        hex_display = hex_data
+                        ascii_display = ascii_data
                         
                 elif isinstance(raw_data, str):
                     data_length = len(raw_data.encode('utf-8'))
+                    ascii_display = raw_data[:80] + f"... (총 {data_length} bytes)" if len(raw_data) > 80 else raw_data
                     hex_data = raw_data.encode('utf-8').hex().upper()
-                    if len(hex_data) > 80:
-                        hex_display = hex_data[:80] + f"... (총 {data_length} bytes)"
-                    else:
-                        hex_display = hex_data
                 else:
                     str_data = str(raw_data)
                     data_length = len(str_data.encode('utf-8'))
+                    ascii_display = str_data[:80] + f"... (총 {data_length} bytes)" if len(str_data) > 80 else str_data
                     hex_data = str_data.encode('utf-8').hex().upper()
-                    hex_display = hex_data[:80] + f"... (총 {data_length} bytes)" if len(hex_data) > 80 else hex_data
                 
-                log_line = f"{timestamp}\t{data_type}\t\t{data_length}\t{hex_display}\n"
+                # ASCII 값 우선 기록
+                log_line = f"{timestamp}\t{data_type}\t\t{data_length}\t{ascii_display}\n"
                 
                 with open(self.raw_log_file, 'a', encoding='utf-8') as f:
                     f.write(log_line)
                     
-                    # 매우 긴 데이터의 경우 전체 내용을 별도 라인에 기록
+                    # HEX 값도 별도 라인에 기록
                     if len(hex_data) > 80:
-                        f.write(f"{timestamp}\t{data_type}_FULL\t{data_length}\t{hex_data}\n")
+                        hex_display = hex_data[:80] + f"... (총 {data_length} bytes)"
+                        f.write(f"{timestamp}\t{data_type}_HEX\t{data_length}\t{hex_display}\n")
+                        f.write(f"{timestamp}\t{data_type}_HEX_FULL\t{data_length}\t{hex_data}\n")
+                    else:
+                        f.write(f"{timestamp}\t{data_type}_HEX\t{data_length}\t{hex_data}\n")
                     
         except Exception as e:
             print(f"RAW 데이터 로그 기록 실패: {e}")

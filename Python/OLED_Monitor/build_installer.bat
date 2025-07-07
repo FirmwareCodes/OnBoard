@@ -188,28 +188,6 @@ if exist "OnBoard_OLED_Monitor.spec" (
 echo ✅ 빌드 파일 정리 완료
 echo.
 
-REM 실행 스크립트 생성
-echo [추가] 실행 스크립트 생성...
-(
-echo @echo off
-echo chcp 65001 ^>nul
-echo title OnBoard OLED Monitor
-echo echo OnBoard OLED Monitor를 시작합니다...
-echo echo.
-echo echo 실행 중... 창이 나타날 때까지 잠시 기다려주세요.
-echo echo 프로그램을 종료하려면 창을 닫으세요.
-echo echo.
-echo "%%~dp0OnBoard_OLED_Monitor.exe"
-echo if errorlevel 1 ^(
-echo     echo.
-echo     echo 프로그램 실행 중 오류가 발생했습니다.
-echo     pause
-echo ^)
-) > "%RUN_DIR%\start_monitor.bat"
-
-echo ✅ 실행 스크립트 생성: %RUN_DIR%\start_monitor.bat
-echo.
-
 REM README 파일 생성
 echo [추가] README 파일 생성...
 (
