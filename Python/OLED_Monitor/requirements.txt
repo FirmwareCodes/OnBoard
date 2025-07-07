@@ -1,5 +1,3 @@
-# OnBoard OLED Monitor v1.4 - 필수 패키지 목록
-# Request-Response Protocol 지원
 
 # 시리얼 통신 (필수)
 pyserial>=3.5
@@ -9,37 +7,3 @@ Pillow>=10.0.0
 
 # 수치 계산 (권장 - 성능 향상)
 numpy>=1.21.0
-
-# GUI 프레임워크 (Python 기본 포함, 확인용)
-# tkinter는 Python 표준 라이브러리이므로 별도 설치 불필요
-
-# 개발/빌드 도구 (선택적)
-# pyinstaller>=4.10  # EXE 빌드용 (build_installer.bat에서 자동 설치)
-
-# 버전 호환성 정보:
-# - Python 3.8+ 지원
-# - Windows 10/11 테스트 완료
-# - 최소 요구사항: pyserial, Pillow
-# - 성능 최적화: numpy (선택적이지만 권장)
-
-# RAW 데이터 로깅 지원 버전
-
-# 추가 유틸리티 (선택사항)
-# matplotlib>=3.5.0  # 그래프 분석용 (대용량 설치)
-# pandas>=1.3.0      # 로그 데이터 분석용 (대용량 설치)
-
-# 개발/디버깅용 (선택사항)
-# hexdump>=3.3        # HEX 데이터 분석용
-# colorama>=0.4.4     # 컬러 출력용
-
-# 최소 설치 (Essential Only)
-# pyserial>=3.5
-# Pillow>=10.0.0
-
-# 권장 설치 (Recommended)
-# pyserial>=3.5
-# Pillow>=10.0.0  
-# numpy>=1.21.0
-
-# 전체 설치 (Full Features)
-# 위의 모든 패키지 

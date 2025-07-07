@@ -169,6 +169,10 @@ extern "C"
 #define LED_MIDDLE_MIN 2100
 #define LED_HIGH_MAX 4095
 #define LED_HIGH_MIN 2800
+
+#define BATTERY_MAX 2960
+#define BATTERY_FULL 2920
+#define BATTERY_MIN 2520
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */

@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-"""
-Serial Data Parser for OnBoard OLED Monitor
-STM32 펌웨어에서 전송된 시리얼 데이터를 파싱하는 모듈
-
-Author: OnBoard LED Timer Project
-Date: 2024-01-01
-"""
-
 import struct
 import numpy as np
 from typing import Dict, Optional, Tuple

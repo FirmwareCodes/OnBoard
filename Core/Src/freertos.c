@@ -583,13 +583,18 @@ void StartDisplayTask(void *argument)
     uint8_t battery_percent = 0;
     static uint8_t prev_battery_display = 255; // 이전 배터리 표시값 (필터링용)
 
-    if (Adc_State.VBat_ADC_Value > 500)
-    {                                                                                     // 3.0V 이상이면 배터리 상태 계산
-      float battery_float = ((float)(Adc_State.VBat_ADC_Value - 500) / 2200.0f * 100.0f); // 3.0V~4.2V 범위를 0~100%로 매핑
-      battery_percent = (uint8_t)(battery_float + 0.5f);                                  // 반올림 처리
+    if (Adc_State.VBat_ADC_Value > BATTERY_MIN)
+    {                                                                                                                 // 3.0V 이상이면 배터리 상태 계산
+      float battery_float = ((float)(Adc_State.VBat_ADC_Value - BATTERY_MIN) / (BATTERY_FULL - BATTERY_MIN) * 100.0f); // 3.0V~4.2V 범위를 0~100%로 매핑
+      battery_percent = (uint8_t)(battery_float + 0.5f);                                                              // 반올림 처리
+    }
+    else
+    {
+      battery_percent = 0;
+      prev_battery_display = 0;
     }
 
-    if (battery_percent > 100 || Adc_State.VBat_ADC_Value > 2650)
+    if ((battery_percent < 150 && battery_percent > 100) || Adc_State.VBat_ADC_Value > BATTERY_FULL)
     {
       battery_percent = 100;
       prev_battery_display = 100;
@@ -932,28 +937,34 @@ void UART_ProcessCommand(void)
 {
   // 명령어 문자열 최적화 (직접 참조로 성능 향상)
   char *cmd_str = (char *)UART_State.cmd_buffer;
-  
+
   // 빠른 길이 체크 (빈 명령어 즉시 거부)
-  if (UART_State.cmd_index == 0) {
+  if (UART_State.cmd_index == 0)
+  {
     UART_State.command_ready = 0;
     return;
   }
-  
+
   // NULL 종료 보장
   UART_State.cmd_buffer[UART_State.cmd_index] = '\0';
-  
+
   // 개행 문자 제거 (최적화된 방식)
-  for (int i = UART_State.cmd_index - 1; i >= 0; i--) {
-    if (cmd_str[i] == '\n' || cmd_str[i] == '\r' || cmd_str[i] == ' ') {
+  for (int i = UART_State.cmd_index - 1; i >= 0; i--)
+  {
+    if (cmd_str[i] == '\n' || cmd_str[i] == '\r' || cmd_str[i] == ' ')
+    {
       cmd_str[i] = '\0';
       UART_State.cmd_index = i;
-    } else {
+    }
+    else
+    {
       break;
     }
   }
 
   // 명령어 길이 재확인
-  if (UART_State.cmd_index == 0) {
+  if (UART_State.cmd_index == 0)
+  {
     UART_State.command_ready = 0;
     return;
   }
@@ -1011,7 +1022,6 @@ void UART_ProcessCommand(void)
   }
   else
   {
-    
   }
 
   // 명령어 버퍼 즉시 초기화 (성능 최적화)
@@ -1024,13 +1034,6 @@ void UART_ProcessCommand(void)
  */
 void UART_SendScreenData(void)
 {
-  // 뮤텍스 획득 (최대 200ms 대기 - 화면 데이터 전송은 시간이 걸릴 수 있음)
-  osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 200);
-  if (mutex_status != osOK)
-  {
-    // 뮤텍스 획득 실패 - 전송 포기
-    return;
-  }
 
   if (Paint.Image == NULL)
   {
@@ -1056,7 +1059,7 @@ void UART_SendScreenData(void)
   }
 
   // 전송 전 잠시 대기 (헤더 완전 전송 보장)
-  osDelay(5);
+  osDelay(3);
 
   // Paint.Image 데이터를 한번에 전송 (안정성 강화)
   // OLED 화면 데이터: 128x64 = 8192 pixels = 1024 bytes (8 pixels per byte)
@@ -1077,10 +1080,8 @@ void UART_SendScreenData(void)
   // 데이터 시작 마커
   const char *data_marker = "<<DATA_START>>\n";
   HAL_UART_Transmit(&huart1, (uint8_t *)data_marker, strlen(data_marker), 1000);
-
   // 전체 이미지를 한번에 전송 (최대 안정성)
   status = HAL_UART_Transmit(&huart1, Paint.Image, image_size, 3000); // 3초 타임아웃
-
   if (status != HAL_OK)
   {
     // 전송 실패시에도 종료 마커 전송
@@ -1091,7 +1092,8 @@ void UART_SendScreenData(void)
   }
 
   // 전송 완료 후 안정화 딜레이
-  osDelay(1);
+  osDelay(3);
+
 
   // 데이터 종료 마커
   const char *data_end_marker = "\n<<DATA_END>>\n";
@@ -1103,15 +1105,19 @@ void UART_SendScreenData(void)
 
   // 뮤텍스 해제
   osMutexRelease(UartMutexHandle);
+
+  osDelay(1);
+  UART_SendStatusData();
 }
 
 /**
  * @brief 상태 정보 전송
  */
-void UART_SendStatusData(void)
+__attribute__((optimize("O0"))) void UART_SendStatusData(void)
 {
   // 뮤텍스 획득 (최대 100ms 대기)
   osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 100);
+  osDelay(1);
   if (mutex_status != osOK)
   {
     // 뮤텍스 획득 실패 - 전송 포기
@@ -1122,14 +1128,17 @@ void UART_SendStatusData(void)
 
   // 배터리 퍼센티지 계산
   uint8_t battery_percent = 0;
-  if (Adc_State.VBat_ADC_Value > 500)
+  if (Adc_State.VBat_ADC_Value > BATTERY_MIN)
   {
-    float battery_float = ((float)(Adc_State.VBat_ADC_Value - 500) / 2200.0f * 100.0f);
+    float battery_float = ((float)(Adc_State.VBat_ADC_Value - BATTERY_MIN) / (BATTERY_FULL - BATTERY_MIN) * 100.0f);
     battery_percent = (uint8_t)(battery_float + 0.5f);
-  }
-  if (battery_percent > 100 || Adc_State.VBat_ADC_Value > 2650)
+  }else if ((battery_percent < 150 && battery_percent > 100) || Adc_State.VBat_ADC_Value > BATTERY_FULL)
   {
     battery_percent = 100;
+  }
+  else
+  {
+    battery_percent = 0;
   }
 
   // 타이머 상태 문자열
@@ -1191,7 +1200,7 @@ void UART_SendResponse(const char *response)
 {
   // 뮤텍스 없이 직접 전송으로 응답성 최대화
   // 짧은 응답 메시지는 충돌 위험이 낮음
-  HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 500);  // 타임아웃 단축
+  HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 500); // 타임아웃 단축
 }
 
 /**
