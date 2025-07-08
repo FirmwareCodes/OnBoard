@@ -8,6 +8,7 @@
             "binaryDir": "${sourceDir}/build/${presetName}",
 		    "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
             "cacheVariables": {
+                "CMAKE_EXE_LINKER_FLAGS": "-u_printf_float"
             }
         },
         {

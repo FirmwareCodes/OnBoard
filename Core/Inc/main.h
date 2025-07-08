@@ -42,6 +42,55 @@ extern "C"
 /* USER CODE BEGIN ET */
 #define VBAT_FILTER_SIZE 8 // VBat 이동평균 필터 크기
 
+// 배터리 측정 버퍼 크기
+#define BATTERY_SAMPLE_BUFFER_SIZE 8
+#define BATTERY_MIN_VOLTAGE_BUFFER_SIZE 8
+
+// 배터리 전압 보정값 (부하 시 전압 강하)
+#define BATTERY_LOAD_VOLTAGE_DROP_ADC 90  // 약 0.8V 강하 (ADC 값)
+#define BATTERY_RECOVERY_TIME_MS 5000    // 회복 시간
+
+// 배터리 상태 열거형
+typedef enum
+{
+  BATTERY_STATUS_NORMAL = 0,
+  BATTERY_STATUS_LOW,
+  BATTERY_STATUS_CRITICAL
+} Battery_Status_t;
+
+// 배터리 측정 및 보정 구조체
+typedef struct
+{
+  uint16_t raw_adc_samples[BATTERY_SAMPLE_BUFFER_SIZE];     // 최근 8개 ADC 샘플
+  uint16_t min_voltage_samples[BATTERY_MIN_VOLTAGE_BUFFER_SIZE]; // 최저 전압 8개 샘플
+  uint8_t sample_index;                                     // 현재 샘플 인덱스
+  uint8_t min_voltage_index;                               // 최저 전압 샘플 인덱스
+  uint8_t sample_buffer_full;                              // 샘플 버퍼 가득참 여부
+  uint8_t min_voltage_buffer_full;                         // 최저 전압 버퍼 가득함 여부
+  
+  // 10초 평균값 계산을 위한 필드들
+  uint16_t ten_second_samples[50];                         // 10초간 샘플 (20ms * 50 = 1초, 실제로는 500개 정도 필요하지만 메모리 절약)
+  uint8_t ten_second_index;                                // 10초 샘플 인덱스
+  uint8_t ten_second_buffer_full;                          // 10초 버퍼 가득참 여부
+  uint32_t ten_second_start_time;                          // 10초 측정 시작 시간
+  
+  uint16_t filtered_voltage;                               // 필터링된 전압 (ADC)
+  uint16_t compensated_voltage;                            // 부하 보정된 전압 (ADC)
+  uint16_t ten_second_average;                             // 10초 평균값
+  float battery_percentage;                                // 배터리 잔량 퍼센트 (소수점 2자리)
+  float last_saved_percentage;                             // 마지막 저장된 퍼센트 (소수점 2자리)
+  Battery_Status_t status;                                 // 배터리 상태
+  
+  uint32_t last_load_state_change_time;                    // 마지막 부하 상태 변경 시간
+  bool is_under_load;                                      // 현재 부하 상태
+  bool voltage_recovery_in_progress;                       // 전압 회복 진행 중
+  bool is_power_on_sequence;                               // 전원 켜짐 시퀀스 중
+  
+  uint32_t last_update_time;                              // 마지막 업데이트 시간
+  uint32_t last_flash_save_time;                          // 마지막 플래시 저장 시간
+  uint32_t power_on_time;                                 // 전원 켜진 시간
+} Battery_Monitor_t;
+
   // LED PWM 제어를 위한 변수들
   typedef enum
   {
@@ -97,6 +146,14 @@ extern "C"
     bool is_pushed_changed;   // 버튼 누름 상태로 인한 변경여부
     bool is_start_to_cooling; // 쿨링 시작 여부
     int8_t cooling_second;    // 쿨링 초 카운트
+    
+    // 더블 클릭 감지를 위한 변수들
+    uint32_t last_click_time;     // 마지막 클릭 시간
+    uint8_t click_count;          // 클릭 카운트
+    bool double_click_detected;   // 더블 클릭 감지 여부
+    
+    // 배터리 표시 토글
+    bool show_battery_voltage;    // true: 전압 표시, false: 퍼센트 표시
   } Button_t;
 
   /* USER CODE END ET */
@@ -127,6 +184,7 @@ extern "C"
   // 플래시 저장 관련 함수 선언
   void Timer_LoadFromFlash(void);
   void Timer_SaveToFlash(uint32_t timer_value);
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -171,9 +229,9 @@ extern "C"
 #define LED_HIGH_MAX 4095
 #define LED_HIGH_MIN 2800
 
-#define BATTERY_MAX 2960
-#define BATTERY_FULL 2920
-#define BATTERY_MIN 2520
+#define BATTERY_MAX 3730 //25.2V
+#define BATTERY_FULL 3640 
+#define BATTERY_MIN 2740 //18.6V
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */

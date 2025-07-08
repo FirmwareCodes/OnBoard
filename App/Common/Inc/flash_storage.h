@@ -25,6 +25,9 @@ typedef struct {
     uint16_t version;               // 버전 정보
     uint16_t reserved;              // 예약 필드
     uint32_t timer_value;           // 저장할 타이머 값 (초 단위)
+    uint8_t battery_percentage;     // 배터리 잔량 퍼센트
+    uint8_t battery_status;         // 배터리 상태
+    uint16_t last_battery_adc;      // 마지막 배터리 ADC 값
     uint32_t checksum;              // 체크섬
 } FlashData_t;
 
@@ -32,6 +35,8 @@ typedef struct {
 HAL_StatusTypeDef Flash_EraseStoragePage(void);
 HAL_StatusTypeDef Flash_WriteTimerValue(uint32_t timer_value);
 HAL_StatusTypeDef Flash_ReadTimerValue(uint32_t *timer_value);
+HAL_StatusTypeDef Flash_WriteBatteryData(uint8_t percentage, uint8_t status, uint16_t adc_value);
+HAL_StatusTypeDef Flash_ReadBatteryData(uint8_t *percentage, uint8_t *status, uint16_t *adc_value);
 uint32_t Flash_CalculateChecksum(const FlashData_t *data);
 uint8_t Flash_IsDataValid(void);
 

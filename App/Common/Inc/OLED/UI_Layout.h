@@ -43,7 +43,7 @@
 #define BATTERY_INNER_RADIUS 21
 #define BATTERY_PROGRESS_WIDTH 7 // 더 두꺼운 프로그래스바
 
-// 배터리 퍼센티지 텍스트 위치 (중앙)
+// 배터리 퍼센트 텍스트 위치 (중앙)
 #define BATTERY_PERCENT_X BATTERY_CENTER_X
 #define BATTERY_PERCENT_Y BATTERY_CENTER_Y + 2
 
@@ -114,6 +114,8 @@ typedef struct
     bool init_bat_animation;
     uint8_t init_battery_percent;  // 초기 애니메이션을 위한 배터리 잔량
     uint8_t battery_percent;       // 배터리 잔량 (0-100%)
+    float battery_voltage;         // 배터리 전압 (V)
+    bool show_voltage;             // true: 전압 표시, false: 퍼센트 표시
     uint8_t timer_minutes;         // 설정된 타이머 분
     uint8_t timer_seconds;         // 설정된 타이머 초
     Timer_Status_t timer_status;   // 타이머 상태
@@ -159,9 +161,9 @@ void UI_DrawFullScreen(UI_Status_t *status);
 void UI_DrawFullScreenOptimized(UI_Status_t *status); // 최적화된 업데이트 함수
 
 // 좌측 영역 - 배터리 관련 함수
-void UI_DrawBatteryArea(uint8_t percent);
+void UI_DrawBatteryArea(uint8_t percent, float voltage, bool show_voltage);
 void UI_DrawBatteryProgress(uint8_t percent);
-void UI_DrawBatteryPercentage(uint8_t percent);
+void UI_DrawBatteryPercentage(uint8_t percent, float voltage, bool show_voltage);
 void UI_DrawTimerIndicator(uint8_t show); // 타이머 실행 표시기 그리기
 
 // 우측 영역 - 정보 표시 함수

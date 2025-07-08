@@ -97,10 +97,25 @@ HAL_StatusTypeDef Flash_WriteTimerValue(uint32_t timer_value)
     uint64_t *data_ptr = (uint64_t *)&flash_data;
     uint32_t write_addr = FLASH_STORAGE_ADDR;
     
-    // 데이터 구조체 준비
-    flash_data.magic = FLASH_MAGIC_NUMBER;
-    flash_data.version = FLASH_VERSION;
-    flash_data.reserved = 0;
+    // 기존 데이터 읽기 (배터리 데이터 보존)
+    if (Flash_IsDataValid())
+    {
+        FlashData_t *existing_data = (FlashData_t *)FLASH_STORAGE_ADDR;
+        flash_data = *existing_data;
+    }
+    else
+    {
+        // 새로운 데이터 구조체 초기화
+        memset(&flash_data, 0, sizeof(FlashData_t));
+        flash_data.magic = FLASH_MAGIC_NUMBER;
+        flash_data.version = FLASH_VERSION;
+        flash_data.reserved = 0;
+        flash_data.battery_percentage = 50;  // 기본값
+        flash_data.battery_status = 0;       // BATTERY_STATUS_NORMAL
+        flash_data.last_battery_adc = 3300;  // 기본 ADC 값
+    }
+    
+    // 타이머 값 업데이트
     flash_data.timer_value = timer_value;
     flash_data.checksum = Flash_CalculateChecksum(&flash_data);
     
@@ -153,6 +168,88 @@ HAL_StatusTypeDef Flash_WriteTimerValue(uint32_t timer_value)
 }
 
 /**
+ * @brief  배터리 데이터를 플래시 메모리에 저장합니다
+ * @param  percentage: 배터리 잔량 퍼센트
+ * @param  status: 배터리 상태
+ * @param  adc_value: 배터리 ADC 값
+ * @retval HAL status
+ */
+HAL_StatusTypeDef Flash_WriteBatteryData(uint8_t percentage, uint8_t status, uint16_t adc_value)
+{
+    HAL_StatusTypeDef hal_status = HAL_OK;
+    FlashData_t flash_data;
+    uint64_t *data_ptr = (uint64_t *)&flash_data;
+    uint32_t write_addr = FLASH_STORAGE_ADDR;
+    
+    // 기존 데이터 읽기 (타이머 데이터 보존)
+    if (Flash_IsDataValid())
+    {
+        FlashData_t *existing_data = (FlashData_t *)FLASH_STORAGE_ADDR;
+        flash_data = *existing_data;
+    }
+    else
+    {
+        // 새로운 데이터 구조체 초기화
+        memset(&flash_data, 0, sizeof(FlashData_t));
+        flash_data.magic = FLASH_MAGIC_NUMBER;
+        flash_data.version = FLASH_VERSION;
+        flash_data.reserved = 0;
+        flash_data.timer_value = 10;  // 기본 타이머 값
+    }
+    
+    // 배터리 데이터 업데이트
+    flash_data.battery_percentage = percentage;
+    flash_data.battery_status = status;
+    flash_data.last_battery_adc = adc_value;
+    flash_data.checksum = Flash_CalculateChecksum(&flash_data);
+    
+    // 페이지 지우기
+    hal_status = Flash_EraseStoragePage();
+    if (hal_status != HAL_OK)
+    {
+        return hal_status;
+    }
+    
+    // 플래시 언락
+    hal_status = HAL_FLASH_Unlock();
+    if (hal_status != HAL_OK)
+    {
+        return hal_status;
+    }
+    
+    // 데이터를 8바이트 단위로 쓰기
+    int data_size = sizeof(FlashData_t);
+    int write_count = (data_size + 7) / 8;
+    
+    for (int i = 0; i < write_count; i++)
+    {
+        uint64_t write_data = 0;
+        
+        if (i < write_count - 1 || (data_size % 8) == 0)
+        {
+            write_data = data_ptr[i];
+        }
+        else
+        {
+            memcpy(&write_data, &data_ptr[i], data_size % 8);
+        }
+        
+        hal_status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, 
+                                       write_addr + (i * 8), 
+                                       write_data);
+        if (hal_status != HAL_OK)
+        {
+            break;
+        }
+    }
+    
+    // 플래시 락
+    HAL_FLASH_Lock();
+    
+    return hal_status;
+}
+
+/**
  * @brief  플래시 메모리에서 타이머 값을 읽습니다
  * @param  timer_value: 읽은 타이머 값을 저장할 포인터
  * @retval HAL status
@@ -175,6 +272,39 @@ HAL_StatusTypeDef Flash_ReadTimerValue(uint32_t *timer_value)
     // 유효한 데이터에서 타이머 값 읽기
     FlashData_t *flash_data = (FlashData_t *)FLASH_STORAGE_ADDR;
     *timer_value = flash_data->timer_value;
+    
+    return HAL_OK;
+}
+
+/**
+ * @brief  플래시 메모리에서 배터리 데이터를 읽습니다
+ * @param  percentage: 배터리 잔량 퍼센트를 저장할 포인터
+ * @param  status: 배터리 상태를 저장할 포인터
+ * @param  adc_value: 배터리 ADC 값을 저장할 포인터
+ * @retval HAL status
+ */
+HAL_StatusTypeDef Flash_ReadBatteryData(uint8_t *percentage, uint8_t *status, uint16_t *adc_value)
+{
+    if (percentage == NULL || status == NULL || adc_value == NULL)
+    {
+        return HAL_ERROR;
+    }
+    
+    // 데이터 유효성 확인
+    if (!Flash_IsDataValid())
+    {
+        // 유효하지 않은 데이터인 경우 기본값 설정
+        *percentage = 50;  // 기본 배터리 잔량: 50%
+        *status = 0;       // BATTERY_STATUS_NORMAL
+        *adc_value = 3300; // 기본 ADC 값 (약 22.5V)
+        return HAL_ERROR;
+    }
+    
+    // 유효한 데이터에서 배터리 정보 읽기
+    FlashData_t *flash_data = (FlashData_t *)FLASH_STORAGE_ADDR;
+    *percentage = flash_data->battery_percentage;
+    *status = flash_data->battery_status;
+    *adc_value = flash_data->last_battery_adc;
     
     return HAL_OK;
 } 
