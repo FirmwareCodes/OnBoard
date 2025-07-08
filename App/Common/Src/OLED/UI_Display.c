@@ -35,8 +35,9 @@ static uint8_t lookup_table_initialized = 0;
  */
 static void init_trig_lookup_table(void)
 {
-    if (lookup_table_initialized) return;
-    
+    if (lookup_table_initialized)
+        return;
+
     for (int i = 0; i < 720; i++)
     {
         float angle = (i * 0.5f - 90.0f) * M_PI / 180.0f; // -90도부터 시작 (12시 방향)
@@ -263,7 +264,7 @@ static void draw_smooth_circle_outline(uint16_t center_x, uint16_t center_y, uin
     int x = radius;
     int y = 0;
     int decision = 1 - radius;
-    
+
     while (x >= y)
     {
         // 8방향 대칭으로 픽셀 그리기
@@ -275,7 +276,7 @@ static void draw_smooth_circle_outline(uint16_t center_x, uint16_t center_y, uin
         Paint_SetPixel(center_x - y, center_y + x, color);
         Paint_SetPixel(center_x + y, center_y - x, color);
         Paint_SetPixel(center_x - y, center_y - x, color);
-        
+
         y++;
         if (decision <= 0)
         {
@@ -299,37 +300,39 @@ static void draw_smooth_circle_outline(uint16_t center_x, uint16_t center_y, uin
  * @param color: 색상
  * @param thickness: 두께
  */
-static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t radius, 
-                              float start_angle, float end_angle, uint16_t color, int thickness)
+static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t radius,
+                               float start_angle, float end_angle, uint16_t color, int thickness)
 {
     // 각도를 인덱스로 변환 (0.5도 간격)
     int start_index = (int)(start_angle * 2.0f);
     int end_index = (int)(end_angle * 2.0f);
-    if (end_index > 720) end_index = 720;
-    
+    if (end_index > 720)
+        end_index = 720;
+
     // 각 두께별로 한 번에 처리
     for (int t = 0; t < thickness; t++)
     {
         int current_radius = radius - t;
-        if (current_radius < 5) continue;
-        
+        if (current_radius < 5)
+            continue;
+
         int prev_x = -999, prev_y = -999; // 이전 픽셀 좌표 (초기값은 유효하지 않은 값)
-        
+
         // 0.5도 간격으로 호 그리기
         for (int i = start_index; i < end_index; i += 1)
         {
             int x = center_x + (int)(current_radius * cos_table[i]);
             int y = center_y + (int)(current_radius * sin_table[i]);
-            
+
             // 메인 픽셀
             Paint_SetPixel(x, y, color);
-            
+
             // 이전 픽셀과의 간격이 1보다 크면 중간 픽셀 채우기 (최적화)
             if (prev_x != -999 && prev_y != -999)
             {
                 int dx = x - prev_x;
                 int dy = y - prev_y;
-                
+
                 // 간격이 클 때만 중간 픽셀 채우기
                 if (abs(dx) > 1 || abs(dy) > 1)
                 {
@@ -337,7 +340,7 @@ static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t ra
                     int mid_x = prev_x + dx / 2;
                     int mid_y = prev_y + dy / 2;
                     Paint_SetPixel(mid_x, mid_y, color);
-                    
+
                     // 필요시 추가 중점
                     if (abs(dx) > 2 || abs(dy) > 2)
                     {
@@ -346,7 +349,7 @@ static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t ra
                     }
                 }
             }
-            
+
             prev_x = x;
             prev_y = y;
         }
@@ -380,44 +383,46 @@ void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint
     const int inner_radius = radius - 8;
     const int progress_start_radius = radius - 1;
     // const int progress_end_radius = radius - 4;
-    
+
     // 브레젠햄 알고리즘으로 완벽한 원형 테두리 그리기
     draw_smooth_circle_outline(center_x, center_y, outer_radius, color);
     draw_smooth_circle_outline(center_x, center_y, inner_radius, color);
 
-    draw_smooth_circle_outline(center_x, center_y, outer_radius+1, COLOR_BLACK);
+    draw_smooth_circle_outline(center_x, center_y, outer_radius + 1, COLOR_BLACK);
 
     // 진행률이 0이면 테두리만 그리고 종료
-    if (progress == 0) return;
+    if (progress == 0)
+        return;
 
     // 진행률에 따른 각도 계산 (0도부터 시계방향)
     float progress_angle = (progress * 360.0f) / 100.0f;
 
     // 최적화된 프로그래스바 그리기 - 단일 함수로 통합
     int progress_thickness = progress_start_radius - inner_radius; // 실제 두께 계산
-    if (progress_thickness > 7) progress_thickness = 7; // 최대 두께 제한
-    
+    if (progress_thickness > 7)
+        progress_thickness = 7; // 최대 두께 제한
+
     draw_optimized_arc(center_x, center_y, progress_start_radius, 0, progress_angle, color, progress_thickness);
-    
+
     // 시작점과 끝점에 둥근 캡 추가 (간소화된 버전)
     if (progress > 3) // 최소 진행률이 있을 때만
     {
         // 시작점 캡 (12시 방향) - 3x3에서 2x2로 축소
         int start_x = center_x;
         int start_y = center_y - (radius - 4);
-        
+
         Paint_SetPixel(start_x, start_y, color);
         Paint_SetPixel(start_x + 1, start_y, color);
         Paint_SetPixel(start_x, start_y + 1, color);
         Paint_SetPixel(start_x + 1, start_y + 1, color);
-        
+
         // 끝점 캡 (진행률이 충분할 때만) - 3x3에서 2x2로 축소
         if (progress > 8)
         {
             float end_angle_rad = (progress_angle - 90) * M_PI / 180.0f;
             int end_x = center_x + (int)((radius - 4) * cos(end_angle_rad));
             int end_y = center_y + (int)((radius - 4) * sin(end_angle_rad));
-            
+
             Paint_SetPixel(end_x, end_y, color);
             Paint_SetPixel(end_x + 1, end_y, color);
             Paint_SetPixel(end_x, end_y + 1, color);
@@ -764,7 +769,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
 
     // 배터리 프로그래스바 업데이트 (주기적)
     uint8_t should_update_progress = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS / UI_UPDATE_INTERVAL_MS)) == 0;
-    if ((should_update_progress || !status->init_bat_animation) && prev_battery_percent != status->battery_percent)
+    if (((should_update_progress && prev_battery_percent != status->battery_percent) || !status->init_bat_animation))
     {
         UI_DrawBatteryProgress(status->battery_percent);
         // 프로그래스바 그린 후 즉시 숫자 표시 (덮어쓰기 방지)

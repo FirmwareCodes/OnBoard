@@ -138,7 +138,6 @@ Button_t Button_State = {
     .cooling_second = 0,                          // 쿨링 초 카운트
 };
 
-
 UART_State_t UART_State = {
     .rx_index = 0,
     .cmd_index = 0,
@@ -155,8 +154,6 @@ void StartDisplayTask(void *argument);
 void StartButtonTask(void *argument);
 void StartUartTask(void *argument);
 void Callback01(void *argument);
-
-
 
 /* USER CODE END FunctionPrototypes */
 
@@ -565,9 +562,9 @@ void StartDisplayTask(void *argument)
     static uint8_t prev_battery_display = 255; // 이전 배터리 표시값 (필터링용)
 
     if (Adc_State.VBat_ADC_Value > BATTERY_MIN)
-    {                                                                                                                 // 3.0V 이상이면 배터리 상태 계산
+    {                                                                                                                  // 3.0V 이상이면 배터리 상태 계산
       float battery_float = ((float)(Adc_State.VBat_ADC_Value - BATTERY_MIN) / (BATTERY_FULL - BATTERY_MIN) * 100.0f); // 3.0V~4.2V 범위를 0~100%로 매핑
-      battery_percent = (uint8_t)(battery_float + 0.5f);                                                              // 반올림 처리
+      battery_percent = (uint8_t)(battery_float + 0.5f);                                                               // 반올림 처리
     }
     else
     {
@@ -575,7 +572,18 @@ void StartDisplayTask(void *argument)
       prev_battery_display = 0;
     }
 
-    if ((battery_percent < 150 && battery_percent > 100) || Adc_State.VBat_ADC_Value > BATTERY_FULL)
+    if (!current_status.init_bat_animation)
+    {
+      if (current_status.force_full_update)
+      {
+        prev_battery_display = 100;
+      }
+      else
+      {
+        prev_battery_display = battery_percent != 0 ? battery_percent : 5;
+      }
+    }
+    else if ((battery_percent < 150 && battery_percent > 100) || Adc_State.VBat_ADC_Value > BATTERY_FULL)
     {
       battery_percent = 100;
       prev_battery_display = 100;
