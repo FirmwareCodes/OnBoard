@@ -36,12 +36,12 @@ extern "C"
 #include "cmsis_os.h"
 #include "flash_storage.h"
 
-  /* USER CODE END Includes */
+/* USER CODE END Includes */
 
-  /* Exported types ------------------------------------------------------------*/
-  /* USER CODE BEGIN ET */
-  #define VBAT_FILTER_SIZE 8  // VBat 이동평균 필터 크기
-  
+/* Exported types ------------------------------------------------------------*/
+/* USER CODE BEGIN ET */
+#define VBAT_FILTER_SIZE 8 // VBat 이동평균 필터 크기
+
   // LED PWM 제어를 위한 변수들
   typedef enum
   {
@@ -66,12 +66,12 @@ extern "C"
     LED_State_t LED2_State;    // LED2 상태
     uint32_t State_Start_Time; // 상태 시작 시간
     uint16_t Current_PWM_Duty; // 현재 PWM 듀티
-    
+
     // VBat 필터링 관련 필드들
-    uint16_t VBat_Filtered;                    // 필터링된 VBat 값
-    uint16_t VBat_Buffer[VBAT_FILTER_SIZE];    // VBat 이동평균 버퍼
-    uint8_t VBat_Buffer_Index;                 // VBat 버퍼 인덱스
-    uint8_t VBat_Buffer_Full;                  // VBat 버퍼 채워짐 여부
+    uint16_t VBat_Filtered;                 // 필터링된 VBat 값
+    uint16_t VBat_Buffer[VBAT_FILTER_SIZE]; // VBat 이동평균 버퍼
+    uint8_t VBat_Buffer_Index;              // VBat 버퍼 인덱스
+    uint8_t VBat_Buffer_Full;               // VBat 버퍼 채워짐 여부
   } Adc_t;
 
   // 버튼 제어를 위한 변수들
@@ -94,10 +94,11 @@ extern "C"
     uint32_t Button_Current_Time;       // 현재 시간
 
     // 버튼 안정화를 위한 디바운싱 변수
-    bool is_pushed_changed; // 버튼 누름 상태로 인한 변경여부
+    bool is_pushed_changed;   // 버튼 누름 상태로 인한 변경여부
     bool is_start_to_cooling; // 쿨링 시작 여부
-    int8_t cooling_second;   // 쿨링 초 카운트
+    int8_t cooling_second;    // 쿨링 초 카운트
   } Button_t;
+
   /* USER CODE END ET */
 
   /* Exported constants --------------------------------------------------------*/
@@ -122,7 +123,7 @@ extern "C"
   void StartDisplayTask(void *argument);
   void StartButtonTask(void *argument);
   void Callback01(void *argument);
-  
+
   // 플래시 저장 관련 함수 선언
   void Timer_LoadFromFlash(void);
   void Timer_SaveToFlash(uint32_t timer_value);

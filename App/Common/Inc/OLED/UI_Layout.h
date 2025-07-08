@@ -180,15 +180,5 @@ void UI_DrawColon(uint16_t x, uint16_t y, uint16_t color);
 void UI_DrawCircle(uint16_t x, uint16_t y, uint16_t radius, uint16_t color, uint8_t filled);
 void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color, uint8_t should_update);
 
-// 예제 및 테스트 함수 선언
-void UI_SystemInit(void);
-void UI_UpdateBattery(uint8_t percent);
-void UI_UpdateTimerSetting(uint8_t hours, uint8_t minutes);
-void UI_ToggleTimerStatus(void);
-UI_Status_t *UI_GetCurrentStatus(void);
-void UI_ShowLowBatteryWarning(void);
-void UI_ShowTimerComplete(void);
-void UI_FadeOut(void);
-void UI_UpdateLoop(void);
 
 #endif

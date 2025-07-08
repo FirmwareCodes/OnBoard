@@ -14,20 +14,6 @@
 #include <math.h>
 #include <stdio.h>
 
-// 외부 아이콘 데이터 선언
-extern const unsigned char timer_icon_8x8[];
-extern const unsigned char battery_icon_8x8[];
-extern const unsigned char play_icon_8x8[];
-extern const unsigned char pause_icon_8x8[];
-extern const unsigned char light_icon_8x8[];
-extern const unsigned char standby_icon_8x8[];
-extern const unsigned char running_icon_8x8[];
-extern const unsigned char setting_icon_8x8[];
-extern const unsigned char cooling_icon_8x8[];
-extern const unsigned char standby_icon_16x16[];
-extern const unsigned char running_icon_16x16[];
-extern const unsigned char setting_icon_16x16[];
-extern const unsigned char cooling_icon_16x16[];
 extern const unsigned char standby_icon_19x19[];
 extern const unsigned char running_icon_19x19[];
 extern const unsigned char setting_icon_19x19[];
@@ -36,13 +22,7 @@ extern const unsigned char cooling_icon_19x19[];
 extern const unsigned char percent_12x12[];
 extern const unsigned char exclamation_12x12[];
 
-extern const unsigned char l1_connected_icon_8x8[];
-extern const unsigned char l1_disconnected_icon_8x8[];
-extern const unsigned char l2_connected_icon_8x8[];
-extern const unsigned char l2_disconnected_icon_8x8[];
 extern const unsigned char digit_5x7[10][7];
-extern const unsigned char exclamation_5x7[7];
-extern const unsigned char percent_5x7[7];
 extern const unsigned char colon_3x7[7];
 
 // 최적화를 위한 전역 변수 (삼각함수 룩업 테이블)
