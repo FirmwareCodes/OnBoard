@@ -124,6 +124,11 @@ typedef struct
     uint32_t blink_counter;           // 깜빡임 카운터
     uint8_t force_full_update;        // 전체 화면 강제 업데이트 플래그
     uint8_t timer_indicator_blink;    // 타이머 실행 표시기 깜빡임 상태
+    
+    // 초기 애니메이션 관련
+    uint8_t init_animation_active;    // 초기 애니메이션 활성 상태
+    float animation_voltage;          // 애니메이션용 전압 값
+    uint32_t animation_counter;       // 애니메이션 카운터
 } UI_Status_t;
 
 // 상태 아이콘 비트맵 (19x19) - 더 큰 아이콘
@@ -157,10 +162,14 @@ void UI_DrawFullScreen(UI_Status_t *status);
 void UI_DrawFullScreenOptimized(UI_Status_t *status); // 최적화된 업데이트 함수
 
 // 좌측 영역 - 배터리 관련 함수
-void UI_DrawBatteryArea(float voltage);
-void UI_DrawVoltageProgress(float voltage);
+void UI_DrawBatteryArea(float voltage, UI_Status_t *status);
+void UI_DrawVoltageProgress(float voltage, UI_Status_t *status);
 void UI_DrawBatteryVoltage(float voltage);
 void UI_DrawTimerIndicator(uint8_t show); // 타이머 실행 표시기 그리기
+
+// 초기 애니메이션 관련 함수
+void UI_StartInitAnimation(UI_Status_t *status, float target_voltage);
+uint8_t UI_UpdateInitAnimation(UI_Status_t *status);
 
 // 우측 영역 - 정보 표시 함수
 void UI_DrawInfoArea(UI_Status_t *status);

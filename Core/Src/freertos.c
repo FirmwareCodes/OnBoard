@@ -559,8 +559,22 @@ void StartDisplayTask(void *argument)
       .progress_update_counter = 0,
       .blink_counter = 0,
       .force_full_update = 1,    // 첫 번째는 전체 업데이트
-      .timer_indicator_blink = 0 // 타이머 표시기 초기값
+      .timer_indicator_blink = 0, // 타이머 표시기 초기값
+      .init_animation_active = 0,  // 애니메이션 비활성 상태로 시작
+      .animation_voltage = 19.0f,
+      .animation_counter = 0
   };
+
+  // 시스템 시작 후 첫 번째 배터리 전압 측정 대기
+  osDelay(500);
+  
+  // 첫 번째 전압 측정 및 초기 애니메이션 시작
+  float initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
+  Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
+  initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
+  
+  // 초기 애니메이션 시작
+  UI_StartInitAnimation(&current_status, initial_voltage);
 
   /* Infinite loop */
   for (;;)

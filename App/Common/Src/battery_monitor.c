@@ -208,64 +208,6 @@ void Battery_Monitor_Update(Battery_Monitor_t *monitor, uint16_t raw_adc_value, 
 }
 
 /**
- * @brief  PWM 듀티에 따른 부하 보정을 적용한 전압 계산
- * @param  raw_adc: 원시 ADC 값
- * @param  is_under_load: 부하 상태
- * @param  time_since_load_change: 부하 상태 변경 후 경과 시간 (ms)
- * @retval 보정된 ADC 값
- * @note   PWM 50% (400 듀티): 1.5A → 0.4V 강하 (약 30 ADC)
- *         PWM 100% (800 듀티): 3.5A → 1.0V 강하 (약 75 ADC)
- */
-uint16_t Battery_Apply_PWM_Load_Compensation(uint16_t raw_adc, bool is_under_load, uint16_t pwm_duty, uint32_t time_since_load_change)
-{
-    uint16_t compensated_adc = raw_adc;
-    
-    if (is_under_load)
-    {
-        // 부하일 때: 실측값 사용
-    }
-    else
-    {
-        // 무부하 상태: PWM 듀티에 따른 전압 회복 보정 적용 (퍼센티지 계산용)
-        uint16_t voltage_drop_adc = 0;
-        
-        // PWM 듀티에 따른 전압 강하 계산
-        if (pwm_duty >= 400 && pwm_duty <= 800)  // 50% ~ 100% 듀티 범위
-        {
-            // 선형 보간: 50% = 30 ADC 강하, 100% = 75 ADC 강하
-            // 0.4V = 30 ADC, 1.0V = 75 ADC (25.2V 기준 변환)
-            float duty_ratio = (float)(pwm_duty - 400) / 400.0f;  // 0.0 ~ 1.0
-            voltage_drop_adc = 30 + (uint16_t)(45 * duty_ratio);  // 30 ~ 75 ADC
-        }
-        else if (pwm_duty > 0 && pwm_duty < 400)  // 0% ~ 50% 듀티 범위
-        {
-            // 50% 미만은 선형적으로 감소
-            float duty_ratio = (float)pwm_duty / 400.0f;  // 0.0 ~ 1.0
-            voltage_drop_adc = (uint16_t)(30 * duty_ratio);  // 0 ~ 30 ADC
-        }
-        
-        // 시간에 따른 전압 회복 시뮬레이션
-        if (time_since_load_change < BATTERY_RECOVERY_TIME_MS && voltage_drop_adc > 0)
-        {
-            // 5초에 걸쳐 점진적 회복
-            float recovery_ratio = (float)time_since_load_change / (float)BATTERY_RECOVERY_TIME_MS;
-            if (recovery_ratio > 1.0f) recovery_ratio = 1.0f;
-            
-            // 회복 곡선 적용 (지수 함수적 회복)
-            float recovery_factor = 1.0f - expf(-3.0f * recovery_ratio);
-            
-            compensated_adc -= (uint16_t)(voltage_drop_adc * recovery_factor);
-        }
-        else if (voltage_drop_adc > 0)
-        {
-            // 완전 회복: 예상되는 무부하 전압으로 보정
-            compensated_adc -= voltage_drop_adc;
-        }
-    }
-    
-    return compensated_adc;
-}
-/**
  * @brief  ADC 값으로부터 배터리 퍼센트 계산
  * @param  adc_value: ADC 값
  * @retval 배터리 퍼센트 (0.00-100.00, 소수점 2자리)

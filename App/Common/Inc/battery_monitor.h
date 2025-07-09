@@ -20,7 +20,6 @@ float Battery_Get_Voltage(Battery_Monitor_t *monitor);
 void Battery_Save_To_Flash(Battery_Monitor_t *monitor);
 void Battery_Load_From_Flash(Battery_Monitor_t *monitor);
 uint16_t Battery_Apply_Load_Compensation(uint16_t raw_adc, bool is_under_load, uint32_t time_since_load_change);
-uint16_t Battery_Apply_PWM_Load_Compensation(uint16_t raw_adc, bool is_load_active, uint16_t pwm_duty, uint32_t time_since_load_change);
 
 #ifdef __cplusplus
 }

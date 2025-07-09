@@ -454,31 +454,37 @@ void UI_DrawTimerIndicator(uint8_t show)
 /**
  * @brief 좌측 배터리 영역 그리기 (96x64)
  * @param voltage: 배터리 전압 (V)
+ * @param status: UI 상태 구조체 (애니메이션 처리용)
  */
-void UI_DrawBatteryArea(float voltage)
+void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
 {
     // 영역 경계선 그리기 (선택사항)
     Paint_DrawLine(LEFT_AREA_WIDTH, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-    // 전압 기반 프로그래스바 그리기
-    UI_DrawVoltageProgress(voltage);
+    // 전압 기반 프로그래스바 그리기 (애니메이션 지원)
+    UI_DrawVoltageProgress(voltage, status);
 
-    // 배터리 전압 그리기
-    UI_DrawBatteryVoltage(voltage);
+    // 배터리 전압 그리기 (애니메이션 중에는 애니메이션 전압 표시)
+    float display_voltage = status->init_animation_active ? status->animation_voltage : voltage;
+    UI_DrawBatteryVoltage(display_voltage);
 }
 
 /**
  * @brief 전압 기반 원형 프로그래스바 그리기
  * @param voltage: 배터리 전압 (19.0V ~ 24.7V)
+ * @param status: UI 상태 구조체 (애니메이션 처리용)
  */
-void UI_DrawVoltageProgress(float voltage)
+void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 {
     // 전압을 퍼센트로 변환 (19.0V = 0%, 24.7V = 100%)
     const float MIN_VOLTAGE = 19.0f;
     const float MAX_VOLTAGE = 24.7f;
     const float WARNING_VOLTAGE = 20.0f; // 경고 전압 임계값
 
-    float voltage_percent = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100.0f;
+    // 애니메이션 중이면 애니메이션 전압 사용, 아니면 실제 전압 사용
+    float current_voltage = status->init_animation_active ? status->animation_voltage : voltage;
+
+    float voltage_percent = ((current_voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100.0f;
 
     // 범위 제한
     if (voltage_percent < 0.0f)
@@ -489,13 +495,13 @@ void UI_DrawVoltageProgress(float voltage)
     uint8_t progress = (uint8_t)voltage_percent;
 
     // 20V 이하일 때 빨간색 경고, 그 외에는 흰색
-    uint16_t progress_color = (voltage < WARNING_VOLTAGE) ? COLOR_WHITE : COLOR_WHITE;
+    uint16_t progress_color = (current_voltage < WARNING_VOLTAGE) ? COLOR_WHITE : COLOR_WHITE;
 
     // 원형 프로그래스바 그리기
     UI_DrawCircularProgressOptimized(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, progress, progress_color, 1);
 
-    // 20V 이하일 때 경고 표시 추가
-    if (voltage < WARNING_VOLTAGE)
+    // 20V 이하일 때 경고 표시 추가 (애니메이션 완료 후에만)
+    if (current_voltage < WARNING_VOLTAGE && !status->init_animation_active)
     {
         // 프로그래스바 중앙에 경고 아이콘 표시 (느낌표)
         uint16_t warning_x = INFO_AREA_X - 15;
@@ -533,9 +539,9 @@ void UI_DrawBatteryVoltage(float voltage)
         UI_DrawDigitLarge(clear_x + 2, base_y, voltage_int / 10, COLOR_WHITE, 1.5);
         UI_DrawDigitLarge(clear_x + 12, base_y, voltage_int % 10, COLOR_WHITE, 1.5);
         // 소수점 그리기
-        Paint_SetPixel(clear_x + 22, base_y + 10, COLOR_WHITE);
         Paint_SetPixel(clear_x + 23, base_y + 10, COLOR_WHITE);
-        Paint_SetPixel(clear_x + 22, base_y + 11, COLOR_WHITE);
+        Paint_SetPixel(clear_x + 24, base_y + 10, COLOR_WHITE);
+        Paint_SetPixel(clear_x + 23, base_y + 11, COLOR_WHITE);
         Paint_SetPixel(clear_x + 23, base_y + 11, COLOR_WHITE);
         UI_DrawDigitLarge(clear_x + 26, base_y, voltage_frac, COLOR_WHITE, 1.5);
     }
@@ -714,6 +720,57 @@ void UI_DrawCoolingTime(uint8_t seconds)
 }
 
 /**
+ * @brief 초기 애니메이션 업데이트 (0V에서 현재 전압까지 단계적으로 채움)
+ * @param status: UI 상태 구조체
+ * @return 애니메이션 완료 여부 (1: 완료, 0: 진행 중)
+ */
+uint8_t UI_UpdateInitAnimation(UI_Status_t *status)
+{
+    // 애니메이션이 비활성이면 바로 완료 반환
+    if (!status->init_animation_active)
+    {
+        return 1;
+    }
+
+    // 애니메이션 속도 제어 (10프레임마다 업데이트 = 500ms마다)
+    if (status->animation_counter % 1 != 0)
+    {
+        status->animation_counter++;
+        return 0; // 아직 진행 중
+    }
+
+    // 현재 목표 전압까지 0.2V씩 증가
+    const float ANIMATION_STEP = 0.1f;
+
+    status->animation_voltage += ANIMATION_STEP;
+
+    // 목표 전압에 도달했거나 초과했으면 애니메이션 완료
+    if (status->animation_voltage >= status->battery_voltage)
+    {
+        status->animation_voltage = status->battery_voltage;
+        status->init_animation_active = 0; // 애니메이션 비활성화
+        status->animation_counter++;
+        return 1; // 완료
+    }
+
+    status->animation_counter++;
+    return 0; // 진행 중
+}
+
+/**
+ * @brief 초기 애니메이션 시작
+ * @param status: UI 상태 구조체
+ * @param target_voltage: 목표 전압
+ */
+void UI_StartInitAnimation(UI_Status_t *status, float target_voltage)
+{
+    status->init_animation_active = 1;
+    status->animation_voltage = 18.6f; // 최소 전압부터 시작
+    status->animation_counter = 0;
+    status->battery_voltage = target_voltage; // 목표 전압 설정
+}
+
+/**
  * @brief 전체 화면 그리기 (새로운 레이아웃)
  * @param status: UI 상태 구조체
  */
@@ -726,7 +783,7 @@ void UI_DrawFullScreen(UI_Status_t *status)
     UI_DrawTimerIndicator(status->timer_indicator_blink);
 
     // 좌측 영역: 배터리 전압 (96x64)
-    UI_DrawBatteryArea(status->battery_voltage);
+    UI_DrawBatteryArea(status->battery_voltage, status);
 
     // 우측 영역: 정보 (32x64)
     UI_DrawInfoArea(status);
@@ -752,20 +809,27 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     static LED_Connection_t prev_l2_connected = LED_DISCONNECTED;
     static uint8_t prev_timer_indicator = 255; // 이전 타이머 표시기 상태
 
-    // 전체 업데이트가 필요한 경우
-    if (status->force_full_update)
+    // 초기 애니메이션 업데이트
+    uint8_t animation_completed = UI_UpdateInitAnimation(status);
+
+    // 전체 업데이트가 필요한 경우 또는 애니메이션 진행 중
+    if (status->force_full_update || status->init_animation_active)
     {
         UI_DrawFullScreen(status);
         status->force_full_update = 0;
-        prev_battery_voltage = status->battery_voltage;
-        prev_timer_status = status->timer_status;
-        prev_timer_minutes = status->timer_minutes;
-        prev_timer_seconds = status->timer_seconds;
-        prev_l1_connected = status->l1_connected;
-        prev_l2_connected = status->l2_connected;
-        prev_timer_indicator = status->timer_indicator_blink;
 
-        return;
+        // 애니메이션 완료 시에만 이전 값들 업데이트
+        if (animation_completed)
+        {
+            status->init_animation_active = false;
+            prev_battery_voltage = status->battery_voltage;
+            prev_timer_status = status->timer_status;
+            prev_timer_minutes = status->timer_minutes;
+            prev_timer_seconds = status->timer_seconds;
+            prev_l1_connected = status->l1_connected;
+            prev_l2_connected = status->l2_connected;
+            prev_timer_indicator = status->timer_indicator_blink;
+        }
     }
 
     // 타이머 실행 표시기 업데이트 (상태가 변경된 경우)
@@ -819,7 +883,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     // 배터리 전압 업데이트 (값이 변경된 경우)
     if (prev_battery_voltage != status->battery_voltage)
     {
-        UI_DrawBatteryArea(status->battery_voltage);
+        UI_DrawBatteryArea(status->battery_voltage, status);
         prev_battery_voltage = status->battery_voltage;
     }
 
