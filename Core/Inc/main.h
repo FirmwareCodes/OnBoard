@@ -76,6 +76,7 @@ typedef struct
   
   uint16_t filtered_voltage;                               // 필터링된 전압 (ADC)
   uint16_t compensated_voltage;                            // 부하 보정된 전압 (ADC)
+  uint16_t display_voltage;                                // 표시용 실측 전압 (ADC, 보정 적용 안함)
   uint16_t ten_second_average;                             // 10초 평균값
   float battery_percentage;                                // 배터리 잔량 퍼센트 (소수점 2자리)
   float last_saved_percentage;                             // 마지막 저장된 퍼센트 (소수점 2자리)
@@ -151,6 +152,11 @@ typedef struct
     uint32_t last_click_time;     // 마지막 클릭 시간
     uint8_t click_count;          // 클릭 카운트
     bool double_click_detected;   // 더블 클릭 감지 여부
+    
+    // 단일클릭 지연 처리를 위한 변수들
+    bool pending_single_click;    // 대기 중인 단일클릭 여부
+    uint32_t single_click_time;   // 단일클릭 발생 시간
+    uint32_t single_click_duration; // 단일클릭 버튼 누름 시간
     
     // 배터리 표시 토글
     bool show_battery_voltage;    // true: 전압 표시, false: 퍼센트 표시
@@ -229,7 +235,7 @@ typedef struct
 #define LED_HIGH_MAX 4095
 #define LED_HIGH_MIN 2800
 
-#define BATTERY_MAX 3730 //25.2V
+#define BATTERY_MAX 3720 //25.2V
 #define BATTERY_FULL 3640 
 #define BATTERY_MIN 2740 //18.6V
   /* USER CODE BEGIN Private defines */

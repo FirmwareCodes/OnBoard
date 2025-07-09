@@ -1,10 +1,23 @@
 /* USER CODE BEGIN Header */
 /**
+ ******************************************************************************
  * File Name          : freertos.c
  * Description        : Code for freertos applications
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
  */
 /* USER CODE END Header */
 
+/* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
@@ -37,52 +50,53 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
+/* Definitions for OneSecondTask */
 osThreadId_t OneSecondTaskHandle;
 const osThreadAttr_t OneSecondTask_attributes = {
     .name = "OneSecondTask",
     .stack_size = 128 * 4,
     .priority = (osPriority_t)osPriorityNormal,
 };
-
+/* Definitions for AdcTask */
 osThreadId_t AdcTaskHandle;
 const osThreadAttr_t AdcTask_attributes = {
     .name = "AdcTask",
     .stack_size = 128 * 4,
     .priority = (osPriority_t)osPriorityHigh,
 };
-
+/* Definitions for DisplayTask */
 osThreadId_t DisplayTaskHandle;
 const osThreadAttr_t DisplayTask_attributes = {
     .name = "DisplayTask",
     .stack_size = 256 * 4,
     .priority = (osPriority_t)osPriorityLow,
 };
-
+/* Definitions for ButtonTask */
 osThreadId_t ButtonTaskHandle;
 const osThreadAttr_t ButtonTask_attributes = {
     .name = "ButtonTask",
     .stack_size = 128 * 4,
     .priority = (osPriority_t)osPriorityNormal1,
 };
-
+/* Definitions for UartTask */
 osThreadId_t UartTaskHandle;
 const osThreadAttr_t UartTask_attributes = {
     .name = "UartTask",
-    .stack_size = 1024 * 4,
-    .priority = (osPriority_t)osPriorityNormal1,
+    .stack_size = 1024 * 4,                      // 스택 크기 대폭 증가 (512*4 -> 1024*4)
+    .priority = (osPriority_t)osPriorityNormal1, // 우선순위 낮춤 (High1 -> Normal1)
 };
-
+/* Definitions for UartMutex */
 osMutexId_t UartMutexHandle;
 const osMutexAttr_t UartMutex_attributes = {
     .name = "UartMutex",
-    .attr_bits = osMutexPrioInherit,
+    .attr_bits = osMutexPrioInherit, // 우선순위 상속으로 priority inversion 방지
 };
-
+/* Definitions for MainTimer */
 osTimerId_t MainTimerHandle;
 const osTimerAttr_t MainTimer_attributes = {
     .name = "MainTimer",
 };
-
+/* Definitions for MainStatusEvent */
 osEventFlagsId_t MainStatusEventHandle;
 const osEventFlagsAttr_t MainStatusEvent_attributes = {
     .name = "MainStatusEvent"};
@@ -96,37 +110,40 @@ extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim2;
 
 Adc_t Adc_State = {
-    .LED1_ADC_Value = 0,
-    .LED2_ADC_Value = 0,
-    .VBat_ADC_Value = 0,
-    .LED1_State = LED_STATE_MIDDLE,
-    .LED2_State = LED_STATE_MIDDLE,
-    .State_Start_Time = 0,
-    .Current_PWM_Duty = 0,
-    .VBat_Filtered = 0,
-    .VBat_Buffer = {0},
-    .VBat_Buffer_Index = 0,
-    .VBat_Buffer_Full = 0,
+    .LED1_ADC_Value = 0,            // LED1 ADC 값
+    .LED2_ADC_Value = 0,            // LED2 ADC 값
+    .VBat_ADC_Value = 0,            // VBat ADC 값
+    .LED1_State = LED_STATE_MIDDLE, // LED1 상태
+    .LED2_State = LED_STATE_MIDDLE, // LED2 상태
+    .State_Start_Time = 0,          // 상태 시작 시간
+    .Current_PWM_Duty = 0,          // 현재 PWM 듀티
+    .VBat_Filtered = 0,             // 필터링된 VBat 값
+    .VBat_Buffer = {0},             // VBat 이동평균 버퍼
+    .VBat_Buffer_Index = 0,         // VBat 버퍼 인덱스
+    .VBat_Buffer_Full = 0,          // VBat 버퍼 채워짐 여부
 };
 
 Button_t Button_State = {
-    .Timer_Value = 10,
-    .Timer_Set_Start_Time = 0,
-    .second_count = 0,
-    .minute_count = 0,
-    .Current_Button_State = BUTTON_STATE_STANDBY,
-    .Button_Press_Start_Time = 0,
-    .Button_Press_Duration = 0,
-    .Button_Current_Time = 0,
-    .Button_Current_State = GPIO_PIN_SET,
-    .Button_Prev_State = GPIO_PIN_SET,
-    .is_pushed_changed = false,
-    .is_start_to_cooling = false,
-    .cooling_second = 0,
-    .last_click_time = 0,
-    .click_count = 0,
-    .double_click_detected = false,
-    .show_battery_voltage = false,
+    .Timer_Value = 10,                            // 타이머 초기값 (플래시에서 로드될 예정)
+    .Timer_Set_Start_Time = 0,                    // TIMER_SET 상태 비활성화 시간
+    .second_count = 0,                            // 타이머 초 카운트
+    .minute_count = 0,                            // 타이머 분 카운트
+    .Current_Button_State = BUTTON_STATE_STANDBY, // 현재 버튼 상태
+    .Button_Press_Start_Time = 0,                 // 버튼 누름 시작 시간
+    .Button_Press_Duration = 0,                   // 버튼 누름 지속 시간
+    .Button_Current_Time = 0,                     // 현재 시간
+    .Button_Current_State = GPIO_PIN_SET,         // 현재 버튼 상태
+    .Button_Prev_State = GPIO_PIN_SET,            // 이전 버튼 상태
+    .is_pushed_changed = false,                   // 버튼 누름 상태로 인한 변경여부
+    .is_start_to_cooling = false,                 // 쿨링 시작 여부
+    .cooling_second = 0,                          // 쿨링 초 카운트
+    .last_click_time = 0,                         // 마지막 버튼 클릭 시간
+    .click_count = 0,                              // 더블 클릭 카운트
+    .double_click_detected = false,                // 더블 클릭 감지 플래그
+    .show_battery_voltage = false,                 // 배터리 표시 토글 플래그
+    .pending_single_click = false,                 // 대기 중인 단일클릭 플래그
+    .single_click_time = 0,                       // 단일클릭 시작 시간
+    .single_click_duration = 0,                   // 단일클릭 지속 시간
 };
 
 UART_State_t UART_State = {
@@ -135,6 +152,7 @@ UART_State_t UART_State = {
     .command_ready = 0,
     .monitoring_enabled = 0};
 
+// 새로운 배터리 모니터링 시스템
 Battery_Monitor_t Battery_Monitor = {0};
 
 /* USER CODE END Variables */
@@ -153,6 +171,10 @@ void Callback01(void *argument);
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
+/**
+ * @brief  플래시에서 타이머 값을 불러와 Button_State에 설정합니다
+ * @retval None
+ */
 void Timer_LoadFromFlash(void)
 {
   uint32_t timer_value = 0;
@@ -160,21 +182,29 @@ void Timer_LoadFromFlash(void)
 
   if (status == HAL_OK)
   {
+    // 유효한 범위 확인 (1초 ~ 255초)
     if (timer_value >= 1 && timer_value <= 255)
     {
       Button_State.Timer_Value = (uint8_t)timer_value;
     }
     else
     {
+      // 범위를 벗어나는 경우 기본값 설정
       Button_State.Timer_Value = 10;
     }
   }
   else
   {
+    // 플래시에서 읽기 실패 시 기본값 설정
     Button_State.Timer_Value = 10;
   }
 }
 
+/**
+ * @brief  타이머 값을 플래시에 저장합니다
+ * @param  timer_value: 저장할 타이머 값 (초 단위)
+ * @retval None
+ */
 void Timer_SaveToFlash(uint32_t timer_value)
 {
   HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
@@ -519,11 +549,7 @@ void StartDisplayTask(void *argument)
 
   // UI 상태 초기화
   UI_Status_t current_status = {
-      .init_bat_animation = false,
-      .init_battery_percent = 0,
-      .battery_percent = 0,
       .battery_voltage = 0.0f,
-      .show_voltage = false,
       .timer_minutes = 0,
       .timer_seconds = 0,
       .timer_status = TIMER_STATUS_STANDBY,
@@ -543,55 +569,14 @@ void StartDisplayTask(void *argument)
     current_status.progress_update_counter++;
     current_status.blink_counter++;
 
-    // 새로운 배터리 모니터링 시스템 사용
-    uint8_t battery_percent = Battery_Get_Percentage_Integer(&Battery_Monitor);
+    // 새로운 배터리 모니터링 시스템 사용 (보정 로직 제거)
     float battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
-    static uint8_t prev_battery_display = 255; // 이전 배터리 표시값 (필터링용)
 
-    // 배터리 모니터 업데이트 (부하 상태 전달)
-    bool is_load_active = Button_State.is_Start_Timer;
-    Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, is_load_active);
+    // 배터리 모니터 업데이트 (보정 없이 실측값만 사용)
+    Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
     
-    // 업데이트된 배터리 정보 사용
-    battery_percent = Battery_Get_Percentage_Integer(&Battery_Monitor);
+    // 업데이트된 배터리 전압 사용
     battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
-
-    if (!current_status.init_bat_animation)
-    {
-      if (current_status.force_full_update)
-      {
-        prev_battery_display = 100;
-      }
-      else
-      {
-        prev_battery_display = battery_percent != 0 ? battery_percent : 5;
-      }
-    }
-    else if ((battery_percent < 150 && battery_percent > 100) || Adc_State.VBat_ADC_Value > BATTERY_FULL)
-    {
-      battery_percent = 100;
-      prev_battery_display = 100;
-    }
-    // 배터리 표시 안정화 (2% 이상 차이가 날 때만 업데이트)
-    else if (prev_battery_display == 255) // 첫 번째 값
-    {
-      prev_battery_display = battery_percent;
-    }
-    else if (abs((int)battery_percent - (int)prev_battery_display) >= 2)
-    {
-      // 2% 이상 차이가 나면 점진적으로 변경
-      if (battery_percent > prev_battery_display)
-      {
-        prev_battery_display += 1;
-      }
-      else if (battery_percent < prev_battery_display)
-      {
-        prev_battery_display -= 1;
-      }
-    }
-
-    // 최종 표시값 사용
-    battery_percent = prev_battery_display;
 
     // 타이머 상태 결정
     Timer_Status_t timer_status = TIMER_STATUS_STANDBY;
@@ -671,7 +656,6 @@ void StartDisplayTask(void *argument)
     }
 
     // UI 상태 구조체 업데이트
-    current_status.battery_percent = battery_percent;
     current_status.battery_voltage = battery_voltage; // 배터리 전압 업데이트
     current_status.timer_minutes = timer_minutes;
     current_status.timer_seconds = timer_seconds;
@@ -680,20 +664,10 @@ void StartDisplayTask(void *argument)
     current_status.l2_connected = l2_connected;
     current_status.cooling_seconds = (uint8_t)Button_State.cooling_second;
 
-    // 버튼 상태에 따라 표시 모드 설정
-    if (Button_State.show_battery_voltage)
-    {
-      current_status.show_voltage = true;
-    }
-    else
-    {
-      current_status.show_voltage = false;
-    }
-
     UI_DrawFullScreenOptimized(&current_status);
 
-    // UI_UPDATE_INTERVAL_MS 주기로 업데이트, 초기 애니메이션 때에는 10ms 주기로 업데이트
-    vTaskDelayUntil(&lastWakeTime, (current_status.init_bat_animation ? UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS : 10 * portTICK_PERIOD_MS));
+    // UI_UPDATE_INTERVAL_MS 주기로 업데이트
+    vTaskDelayUntil(&lastWakeTime, UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartDisplayTask */
 }
@@ -764,99 +738,112 @@ void StartButtonTask(void *argument)
       // 유효한 버튼 클릭인지 확인 (최소 20ms 이상)
       if (Button_State.Button_Press_Duration >= (20 / portTICK_PERIOD_MS))
       {
-        // 더블 클릭 감지 로직
         uint32_t current_time = Button_State.Button_Current_Time;
         uint32_t time_since_last_click = current_time - Button_State.last_click_time;
         
-        // 더블 클릭 간격: 500ms 이내
-        if (time_since_last_click <= (500 / portTICK_PERIOD_MS))
+        // 더블 클릭 간격: 500ms 이내 && 이전 클릭이 있었을 때
+        if (Button_State.last_click_time > 0 && 
+            time_since_last_click <= (500 / portTICK_PERIOD_MS))
         {
-          Button_State.click_count++;
-          if (Button_State.click_count >= 2)
+          // 더블 클릭 감지됨
+          Button_State.double_click_detected = true;
+          Button_State.pending_single_click = false; // 대기 중인 단일클릭 취소
+          Button_State.click_count = 0;
+          
+          // 더블 클릭 시 배터리 표시 토글 (STANDBY 상태에서만)
+          if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
           {
-            Button_State.double_click_detected = true;
-            Button_State.click_count = 0;
-            
-            // 더블 클릭 시 배터리 표시 토글 (STANDBY 상태에서만)
-            if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
-            {
-              Button_State.show_battery_voltage = !Button_State.show_battery_voltage;
-            }
+            Button_State.show_battery_voltage = !Button_State.show_battery_voltage;
           }
+          
+          // 더블클릭 처리 완료 후 즉시 플래그 리셋 및 last_click_time 초기화
+          Button_State.double_click_detected = false;
+          Button_State.last_click_time = 0; // 다음 클릭을 새로운 시작으로 처리
         }
         else
         {
-          // 간격이 너무 길면 클릭 카운트 리셋
-          Button_State.click_count = 1;
-          Button_State.double_click_detected = false;
+          // 첫 번째 클릭 또는 간격이 너무 긴 클릭
+          // 이전 더블클릭과 충분한 간격이 있는지 확인
+          if (Button_State.last_click_time == 0 || time_since_last_click > (500 / portTICK_PERIOD_MS))
+          {
+            // 단일클릭으로 처리하되 500ms 지연 후 실행
+            Button_State.pending_single_click = true;
+            Button_State.single_click_time = current_time;
+            Button_State.single_click_duration = Button_State.Button_Press_Duration;
+            Button_State.last_click_time = current_time;
+            Button_State.click_count = 1;
+            Button_State.double_click_detected = false; // 새로운 클릭 시퀀스 시작
+          }
         }
+      }
+    }
+
+    // 지연된 단일클릭 처리 - 500ms 후에 실행
+    if (Button_State.pending_single_click)
+    {
+      uint32_t time_since_single_click = Button_State.Button_Current_Time - Button_State.single_click_time;
+      
+      // 500ms 대기 후 단일클릭 처리
+      if (time_since_single_click >= (500 / portTICK_PERIOD_MS))
+      {
+        Button_State.pending_single_click = false;
         
-        Button_State.last_click_time = current_time;
-
-        // 더블 클릭이 아닌 경우에만 기존 버튼 로직 실행
-        if (!Button_State.double_click_detected)
+        // 단일클릭 처리 (더블클릭이 감지된 경우 이미 pending_single_click이 false로 설정됨)
+        // 버튼 상태에 따른 동작 처리
+        switch (Button_State.Current_Button_State)
         {
-          // 버튼 상태에 따른 동작 처리
-          switch (Button_State.Current_Button_State)
+        case BUTTON_STATE_STANDBY:
+          // STANDBY에서 1초 이하 클릭 -> ON 상태로 전환
+          if (Button_State.single_click_duration < (1000 / portTICK_PERIOD_MS) && !Button_State.is_start_to_cooling)
           {
-          case BUTTON_STATE_STANDBY:
-            // STANDBY에서 1초 이하 클릭 -> ON 상태로 전환
-            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS) && !Button_State.is_start_to_cooling)
+            HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
+            Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
+
+            if (Button_State.is_Start_Timer)
             {
-              HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
-              Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
-
-              if (Button_State.is_Start_Timer)
-              {
-                osTimerStart(MainTimerHandle, 1000); // 1000ms = 1초 주기
-                Button_State.minute_count = Button_State.Timer_Value;
-                Button_State.second_count = 0; // 59초부터 시작 (첫 번째 콜백에서 59->58로)
-              }
-              else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
-              {
-                Button_State.is_start_to_cooling = true;
-
-                int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
-                if (cooling_second > 60)
-                {
-                  cooling_second = 60;
-                }
-                Button_State.cooling_second = cooling_second;
-              }
-              else if (!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
-              {
-                osTimerStop(MainTimerHandle);
-                HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
-              }
+              osTimerStart(MainTimerHandle, 1000); // 1000ms = 1초 주기
+              Button_State.minute_count = Button_State.Timer_Value;
+              Button_State.second_count = 0; // 59초부터 시작 (첫 번째 콜백에서 59->58로)
             }
-            break;
-
-          case BUTTON_STATE_TIMER_SET:
-            // TIMER_SET에서 1초 이하 클릭 -> 타이머 값 증가
-            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
+            else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
             {
-              Button_State.Timer_Value += 2;
-              if (Button_State.Timer_Value > 10)
+              Button_State.is_start_to_cooling = true;
+
+              int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
+              if (cooling_second > 60)
               {
-                Button_State.Timer_Value = 2; // 10을 넘으면 1부터 다시 시작
+                cooling_second = 60;
               }
-
-              // 타이머 값이 변경되었으므로 플래시에 저장
-              Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
-
-              // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
-              Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
+              Button_State.cooling_second = cooling_second;
             }
-            break;
-
-          default:
-            break;
+            else if (!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
+            {
+              osTimerStop(MainTimerHandle);
+              HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+            }
           }
-        }
-        else
-        {
-          // 더블 클릭 플래그 리셋
-          Button_State.double_click_detected = false;
+          break;
+
+        case BUTTON_STATE_TIMER_SET:
+          // TIMER_SET에서 1초 이하 클릭 -> 타이머 값 증가
+          if (Button_State.single_click_duration < (1000 / portTICK_PERIOD_MS))
+          {
+            Button_State.Timer_Value += 2;
+            if (Button_State.Timer_Value > 10)
+            {
+              Button_State.Timer_Value = 2; // 10을 넘으면 1부터 다시 시작
+            }
+
+            // 타이머 값이 변경되었으므로 플래시에 저장
+            Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
+
+            // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
+            Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
+          }
+          break;
+
+        default:
+          break;
         }
       }
     }
