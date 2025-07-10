@@ -542,7 +542,7 @@ void UI_DrawBatteryVoltage(float voltage)
         Paint_SetPixel(clear_x + 23, base_y + 10, COLOR_WHITE);
         Paint_SetPixel(clear_x + 24, base_y + 10, COLOR_WHITE);
         Paint_SetPixel(clear_x + 23, base_y + 11, COLOR_WHITE);
-        Paint_SetPixel(clear_x + 23, base_y + 11, COLOR_WHITE);
+        Paint_SetPixel(clear_x + 24, base_y + 11, COLOR_WHITE);
         UI_DrawDigitLarge(clear_x + 26, base_y, voltage_frac, COLOR_WHITE, 1.5);
     }
     else
