@@ -100,7 +100,7 @@ class StatusLogger:
                     raw_display = str(raw_data)[:100] + '...' if len(str(raw_data)) > 100 else str(raw_data)
                 
                 # 상태 로그 라인 구성 (BAT ADC 및 RAW 데이터 포함)
-                log_line = f"{timestamp}\t{battery}%\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{bat_adc}\t{source}\t{raw_display}\n"
+                log_line = f"{timestamp}\t{battery}V\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{bat_adc}\t{source}\t{raw_display}\n"
                 
                 # 파일에 기록
                 with open(self.status_log_file, 'a', encoding='utf-8') as f:

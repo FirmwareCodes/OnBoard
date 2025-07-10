@@ -207,7 +207,7 @@ __attribute__((optimize("O0"))) void UART_SendStatusData(void)
 
   // 새로운 배터리 모니터링 시스템에서 소수점 값 사용
   float battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
-  uint16_t battery_voltage_int = (uint8_t)(battery_voltage * 100);
+  uint16_t battery_voltage_int = (uint16_t)(battery_voltage * 100);
 
   // 타이머 상태 문자열
   const char *status_str;

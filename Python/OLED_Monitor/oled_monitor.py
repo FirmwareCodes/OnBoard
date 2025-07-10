@@ -215,7 +215,7 @@ class OLEDMonitor:
             # 상태 데이터를 텍스트로 기록
             timestamp = datetime.now().strftime('%H:%M:%S')
             
-            battery = status_data.get('battery', 0)
+            battery = status_data.get('battery', 18.6)
             timer = status_data.get('timer', '00:00')
             status = status_data.get('status', 'UNKNOWN')
             l1_connected = "O" if status_data.get('l1_connected', False) else "X"
@@ -223,7 +223,7 @@ class OLEDMonitor:
             bat_adc = status_data.get('bat_adc', 0)
             
             with open(self.status_log_file, 'a', encoding='utf-8') as f:
-                f.write(f"{timestamp}\t\t{battery}%\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{bat_adc}\n")
+                f.write(f"{timestamp}\t\t{battery}V\t{timer}\t\t{status}\t\t{l1_connected}\t{l2_connected}\t{bat_adc}\n")
             
         except Exception as e:
             # 로그 기록 실패시 콘솔에만 출력 (무한 루프 방지)
@@ -1295,7 +1295,7 @@ class OLEDMonitor:
                                 status_info = {
                                     'timestamp': datetime.now().strftime('%H:%M:%S'), 
                                     'source': 'firmware',
-                                    'battery': 0,
+                                    'battery': 18.6,
                                     'timer': '00:00',
                                     'status': 'UNKNOWN',
                                     'l1_connected': False,
@@ -1320,7 +1320,7 @@ class OLEDMonitor:
                                     
                                     if key == 'BAT':
                                         try:
-                                            battery_val = int(value.replace('V', ''))
+                                            battery_val = float(value.replace('V', ''))
                                             status_info['battery'] = battery_val/100
                                         except:
                                             pass
@@ -1833,7 +1833,7 @@ class OLEDMonitor:
         import random
         
         return {
-            'battery': random.randint(20, 100),
+            'battery': random.randint(18, 25),
             'timer': f"{random.randint(0, 59):02d}:{random.randint(0, 59):02d}",
             'status': 'STANDBY',  # 안전한 기본 상태
             'l1_connected': False,  # 안전한 기본값
@@ -2486,7 +2486,7 @@ class OLEDMonitor:
             return {
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'source': 'firmware_error',
-                'battery': 0,
+                'battery': 18.6,
                 'timer': '00:00',
                 'status': 'ERROR',
                 'l1_connected': False,
@@ -2671,7 +2671,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
                                 
                                 if key == 'BAT':
                                     try:
-                                        status_info['battery'] = max(0, min(100, int(value.replace('%', ''))))
+                                        status_info['battery'] = float(value.replace('V', ''))/100
                                     except:
                                         pass
                                 elif key == 'TIMER':
@@ -3710,7 +3710,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             status_info = {
                 'timestamp': datetime.now().strftime('%H:%M:%S'), 
                 'source': 'firmware',
-                'battery': 0,
+                'battery': 18.6,
                 'timer': '00:00',
                 'status': 'UNKNOWN',
                 'l1_connected': False,
@@ -3808,7 +3808,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
             return {
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'source': 'firmware_error',
-                'battery': 0,
+                'battery': 18.6,
                 'timer': '00:00',
                 'status': 'ERROR',
                 'l1_connected': False,

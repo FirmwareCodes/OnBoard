@@ -20,7 +20,7 @@ OnBoard OLED Monitor - 독립 실행 파일
 - 연결 문제시 다른 프로그램이 포트를 사용 중인지 확인하세요
 
 버전: v1.4 - Request-Response Protocol
-빌드 날짜: 2025-07-07 17:40:26.60
+빌드 날짜: 2025-07-10  9:17:52.08
 
 설치 위치: C:\Users\ym720\Git-projects\OnBoard_FW\Python\OLED_Monitor\run
 실행 방법: start_monitor.bat 또는 OnBoard_OLED_Monitor.exe

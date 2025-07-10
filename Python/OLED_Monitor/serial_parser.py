@@ -322,8 +322,8 @@ class SerialDataParser:
             'l1_connected': random.choice([True, False]),
             'l2_connected': random.choice([True, False]),
             'bat_adc': random.randint(0, 4095),  # 12-bit ADC 값
-            'raw_data': b'STATUS:BAT:75%,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0,BAT_ADC:2048',
-            'raw_string': 'STATUS:BAT:75%,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0,BAT_ADC:2048'
+            'raw_data': b'STATUS:BAT:18.6V,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0,BAT_ADC:2048',
+            'raw_string': 'STATUS:BAT:18.6V,TIMER:05:30,STATUS:RUNNING,L1:1,L2:0,BAT_ADC:2048'
         }
     
     def validate_screen_data(self, data: np.ndarray) -> bool:
