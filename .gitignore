@@ -9,3 +9,5 @@
 *.txt
 *.pyc
 /OnBoardCtrl_FW.map
+/Python/OLED_Monitor/venv/*
+*.log

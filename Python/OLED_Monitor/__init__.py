@@ -1,40 +1,24 @@
+# -*- coding: utf-8 -*-
 """
-OnBoard OLED Monitor Package
-STM32 펌웨어의 OLED 디스플레이 모니터링 도구
-
-Author: OnBoard LED Timer Project
-Date: 2024-01-01
-Version: 1.0.0
+OLED Monitor Package
+STM32 기반 OLED 모니터링 시스템
 """
 
-__version__ = "1.0.0"
-__author__ = "OnBoard LED Timer Project"
-__email__ = "support@onboard-timer.com"
-__description__ = "STM32 OLED Display Monitoring Tool"
+__version__ = "2.0.0"
+__author__ = "OnBoard Team"
+__description__ = "STM32 OLED 모니터링 시스템"
 
-# 주요 클래스들을 패키지 레벨에서 import 가능하게 함
-from .oled_monitor import OLEDMonitor
-from .serial_parser import SerialDataParser, ProtocolManager
-from .utils import (
-    FileManager,
-    Logger,
-    SerialPortManager,
-    ImageProcessor,
-    ConfigManager,
-    PerformanceMonitor,
-    DataBuffer
-)
+# 핵심 모듈들
+from . import core
+from . import parsers
+from . import utils_enhanced
 
-# 패키지의 주요 구성요소들
+# 메인 클래스
+from .oled_monitor_optimized import OptimizedOLEDMonitor
+
 __all__ = [
-    "OLEDMonitor",
-    "SerialDataParser", 
-    "ProtocolManager",
-    "FileManager",
-    "Logger",
-    "SerialPortManager",
-    "ImageProcessor",
-    "ConfigManager",
-    "PerformanceMonitor",
-    "DataBuffer"
+    'OptimizedOLEDMonitor',
+    'core',
+    'parsers', 
+    'utils_enhanced'
 ] 
