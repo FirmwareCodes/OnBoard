@@ -148,20 +148,122 @@ class SerialCommunicator(CommunicationInterface):
             self.logger.error(f"명령 전송 실패: {e}")
             return False
     
-    def send_command_sync(self, command: bytes) -> bool:
-        """동기 명령 전송"""
+    def send_command_and_wait(self, command: bytes, timeout_ms: int = 1000) -> Optional[bytes]:
+        """명령 전송 후 응답 대기 - 개선된 버전"""
+        # 요청 전 버퍼 클리어 (데이터 동기화)
+        self.clear_buffers()
+        
+        if not self.send_command_sync(command):
+            return None
+        
+        return self.wait_for_response(timeout_ms)
+    
+    def wait_for_response(self, timeout_ms: int = 1000) -> Optional[bytes]:
+        """응답 대기 - 속도 개선된 버전"""
         if not self.is_connected_flag or not self.serial_port:
+            return None
+        
+        try:
+            timeout_seconds = timeout_ms / 1000.0
+            start_time = time.time()
+            response_data = b''
+            
+            while time.time() - start_time < timeout_seconds:
+                if self.serial_port.in_waiting > 0:
+                    chunk = self.serial_port.read(self.serial_port.in_waiting)
+                    response_data += chunk
+                    
+                    # 완료 조건 확인 - 속도 우선
+                    if self._is_response_complete(response_data):
+                        break
+                else:
+                    time.sleep(0.005)  # 5ms로 단축 (속도 개선)
+            
+            if response_data:
+                self.stats['bytes_received'] += len(response_data)
+                self.stats['responses_received'] += 1
+                self.stats['last_activity'] = time.time()
+                
+                return response_data
+            else:
+                self.logger.warning(f"응답 타임아웃: {timeout_ms}ms")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"응답 대기 오류: {e}")
+            return None
+    
+    def _is_response_complete(self, data: bytes) -> bool:
+        """응답 완료 여부 확인 - 속도 우선 최적화"""
+        if not data:
+            return False
+        
+        # 화면 응답인 경우 - 빠른 판단
+        if b'<<SCREEN_START>>' in data:
+            # 최소 조건만 확인 (속도 우선)
+            has_screen_end = b'<<SCREEN_END>>' in data
+            
+            if has_screen_end:
+                # 충분한 데이터가 있으면 완료로 판단
+                if len(data) > 1200:  # 1.2KB 이상
+                    return True
+                
+                # STATUS가 있으면 더 좋음
+                if b'STATUS:' in data:
+                    status_pos = data.rfind(b'STATUS:')
+                    if status_pos != -1:
+                        after_status = data[status_pos:]
+                        if b'\n' in after_status or b'\r' in after_status:
+                            return True
+                
+                # SCREEN_END 이후 100ms 더 대기했으면 완료
+                return True
+                
+            return False
+        
+        # 일반 응답인 경우
+        if b'\n' in data or b'\r' in data:
+            return True
+        
+        # 최대 크기 제한
+        if len(data) > 8000:  # 8KB로 줄임
+            return True
+        
+        return False
+    
+    def send_command_sync(self, command: bytes) -> bool:
+        """동기 명령 전송 - 개선된 버전"""
+        if not self.is_connected_flag or not self.serial_port:
+            self.logger.error("시리얼 포트가 연결되지 않음")
             return False
         
         try:
-            self.serial_port.write(command)
+            # 포트 상태 확인
+            if not self.serial_port.is_open:
+                self.logger.error("시리얼 포트가 닫혀있음")
+                return False
+            
+            # 명령어 형식 확인 및 개행 추가
+            if isinstance(command, str):
+                command_bytes = command.encode('utf-8') + b'\n'
+            else:
+                command_bytes = command
+                if not command_bytes.endswith((b'\n', b'\r\n')):
+                    command_bytes = command_bytes + b'\n'
+            
+            # 전송 및 플러시
+            bytes_written = self.serial_port.write(command_bytes)
             self.serial_port.flush()
             
-            self.stats['bytes_sent'] += len(command)
+            # 전송 결과 확인
+            if bytes_written != len(command_bytes):
+                self.logger.warning(f"명령 전송 불완전: {bytes_written}/{len(command_bytes)} bytes")
+                return False
+            
+            self.stats['bytes_sent'] += len(command_bytes)
             self.stats['commands_sent'] += 1
             self.stats['last_activity'] = time.time()
             
-            self.logger.debug(f"명령 전송: {command}")
             return True
             
         except Exception as e:
@@ -363,12 +465,31 @@ class SerialCommunicator(CommunicationInterface):
         }
     
     def clear_buffers(self):
-        """버퍼 비우기"""
-        if self.serial_port:
-            self.serial_port.reset_input_buffer()
-            self.serial_port.reset_output_buffer()
+        """버퍼 비우기 - 데이터 동기화 개선"""
+        if not self.serial_port or not self.serial_port.is_open:
+            return
         
-        # 큐 비우기
+        try:
+            # 입력 버퍼 클리어
+            if self.serial_port.in_waiting > 0:
+                old_data = self.serial_port.read(self.serial_port.in_waiting)
+                if len(old_data) > 0:
+                    self.logger.info(f"버퍼 클리어: {len(old_data)} bytes")
+            
+            # 출력 버퍼 플러시
+            self.serial_port.flush()
+            
+            # 추가 안정성을 위한 짧은 대기
+            time.sleep(0.01)  # 10ms로 단축
+            
+            # 재클리어
+            if self.serial_port.in_waiting > 0:
+                self.serial_port.read(self.serial_port.in_waiting)
+                
+        except Exception as e:
+            self.logger.warning(f"버퍼 클리어 오류: {e}")
+        
+        # 큐 비우기도 동시에
         while not self.receive_queue.empty():
             try:
                 self.receive_queue.get_nowait()

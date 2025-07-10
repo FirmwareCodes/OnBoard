@@ -74,8 +74,8 @@ LOG_LEVELS = {
     'CRITICAL': 4,
 }
 
-# 파일 경로
-DEFAULT_LOG_DIR = "LOG"
+# 파일 경로 - 실행 파일과 동일한 경로에 로그 폴더만 생성
+DEFAULT_LOG_DIR = "logs"  # 변경: "LOG" -> "logs"
 DEFAULT_GRAPHS_DIR = "graphs"
 DEFAULT_RUN_DIR = "run"
 

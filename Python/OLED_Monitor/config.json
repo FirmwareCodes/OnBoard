@@ -5,12 +5,12 @@
     "border_color": 128
   },
   "monitoring": {
-    "refresh_interval": 100,
+    "refresh_interval": 1000,
     "auto_reconnect": true,
     "reconnect_interval": 5.0
   },
   "communication": {
-    "baudrate": 115200,
+    "baudrate": 921600,
     "timeout": 1.0,
     "auto_detect_port": true
   },

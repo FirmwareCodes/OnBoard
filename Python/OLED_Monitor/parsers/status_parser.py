@@ -136,17 +136,16 @@ class StatusDataParser(DataParserInterface):
             return self._generate_safe_status()
     
     def _parse_individual_field(self, key: str, value: str, result: Dict[str, Any]):
-        """개별 필드 파싱"""
+        """개별 필드 파싱 - 원본 로직 적용"""
         if key == 'BAT':
-            # 배터리 파싱 (안전한 처리)
+            # 배터리 파싱 (원본 로직: RAW 값을 /100해서 전압으로)
             try:
                 battery_str = value.replace('V', '').replace('%', '').strip()
-                if '.' in battery_str:
-                    battery_val = float(battery_str)
-                    result['battery'] = battery_val
-                elif battery_str.isdigit():
-                    battery_val = int(battery_str)
-                    result['battery'] = battery_val
+                if battery_str.isdigit():
+                    battery_raw = int(battery_str)
+                    # 원본 로직: /100해서 전압으로 변환
+                    battery_voltage = battery_raw / 100.0
+                    result['battery'] = battery_voltage
                 else:
                     result['battery'] = 0
             except (ValueError, TypeError):
@@ -175,7 +174,7 @@ class StatusDataParser(DataParserInterface):
             result['l2_connected'] = (value == '1')
             
         elif key == 'BAT_ADC':
-            # BAT ADC 파싱 (강화된 안전 처리)
+            # BAT ADC 파싱 (원본 로직: ADC 값 그대로 표시)
             try:
                 # 숫자 문자열 검증
                 if value.isdigit() and len(value) <= 5:  # 최대 5자리

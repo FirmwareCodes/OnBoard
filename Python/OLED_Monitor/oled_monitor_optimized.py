@@ -34,12 +34,17 @@ class OptimizedOLEDMonitor:
         # 핵심 컴포넌트 초기화
         self.logger = EnhancedLogger("OLEDMonitor")
         
-        # 로거 중복 방지를 위해 basicConfig 제거
-        # 대신 루트 로거의 핸들러 중복 방지
+        # 루트 로거의 레벨을 INFO로 설정 (DEBUG 로그 방지)
         import logging
         root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+        
+        # 기본 설정만 적용 (핸들러 중복 방지)
         if not root_logger.handlers:
-            logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.WARNING)  # 콘솔에는 WARNING 이상만
+            console_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+            root_logger.addHandler(console_handler)
         
         self.communicator = SerialCommunicator(auto_reconnect=True)
         self.parser = UnifiedDataParser()
@@ -79,13 +84,18 @@ class OptimizedOLEDMonitor:
         }
     
     def load_configuration(self):
-        """설정 로드"""
+        """설정 로드 - 파싱 방법 포함"""
         try:
             config = self.config_manager.load_config()
             self.display_scale = config.get('display.scale', DEFAULT_SCALE)
             self.refresh_interval = config.get('monitoring.refresh_interval', DEFAULT_REFRESH_INTERVAL)
             
-            self.logger.info(f"설정 로드 완료: 스케일={self.display_scale}, 갱신간격={self.refresh_interval}ms")
+            # 파싱 방법 로드
+            parsing_method = config.get('display.parsing_method', 'method5_flipped_v')
+            if hasattr(self, 'parsing_var'):
+                self.parsing_var.set(parsing_method)
+            
+            self.logger.info(f"설정 로드 완료: 스케일={self.display_scale}, 갱신간격={self.refresh_interval}ms, 파싱방법={parsing_method}")
             
         except Exception as e:
             self.logger.error(f"설정 로드 실패: {e}")
@@ -95,6 +105,8 @@ class OptimizedOLEDMonitor:
         """기본 설정 사용"""
         self.display_scale = DEFAULT_SCALE
         self.refresh_interval = DEFAULT_REFRESH_INTERVAL
+        if hasattr(self, 'parsing_var'):
+            self.parsing_var.set('method5_flipped_v')
         self.logger.info("기본 설정 사용")
     
     def setup_gui(self):
@@ -232,6 +244,35 @@ class OptimizedOLEDMonitor:
         interval_spinbox.bind('<Return>', lambda e: self.on_interval_changed())
         interval_spinbox.bind('<FocusOut>', lambda e: self.on_interval_changed())
         
+        # 화면 방향 설정 추가
+        parsing_frame = ttk.Frame(monitor_frame)
+        parsing_frame.pack(fill=tk.X, pady=(5, 5))
+        
+        ttk.Label(parsing_frame, text="화면 방향:").pack(anchor=tk.W)
+        
+        self.parsing_var = tk.StringVar(value="method5_flipped_v")
+        parsing_combo = ttk.Combobox(
+            parsing_frame, 
+            textvariable=self.parsing_var, 
+            width=25,
+            state="readonly"
+        )
+        parsing_combo['values'] = [
+            'method1_direct',           # 직접 매핑
+            'method2_reversed',         # reverse 함수 적용
+            'method3_rotated_180',      # 180도 회전
+            'method4_flipped_h',        # 가로 뒤집기
+            'method5_flipped_v',        # 세로 뒤집기 (기본, 안정적)
+            'method5_rotate_90',        # 90도 시계방향 회전
+            'method5_rotate_270',       # 270도 시계방향 회전
+            'method5_mirror_h',         # 가로 미러링
+            'method5_mirror_v',         # 세로 미러링
+            'method5_flip_both',        # 상하좌우 모두 뒤집기
+            'method6_transposed'        # 전치 + 조정
+        ]
+        parsing_combo.pack(fill=tk.X, pady=(0, 5))
+        parsing_combo.bind('<<ComboboxSelected>>', self.on_parsing_method_changed)
+        
         # 수동 요청 버튼들
         button_frame = ttk.Frame(monitor_frame)
         button_frame.pack(fill=tk.X, pady=(5, 0))
@@ -346,9 +387,8 @@ class OptimizedOLEDMonitor:
     
     def setup_callbacks(self):
         """이벤트 콜백 설정"""
-        # 통신 이벤트 콜백
+        # 통신 이벤트 콜백만 유지 (데이터 콜백은 제거)
         self.communicator.register_event_callback('connection', self.on_connection_event)
-        self.communicator.register_data_callback('data', self.on_data_received)
         
         # 윈도우 종료 이벤트
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -448,142 +488,289 @@ class OptimizedOLEDMonitor:
         self.logger.info("모니터링 중지")
     
     def monitoring_loop(self):
-        """모니터링 루프"""
+        """모니터링 루프 - 원본 구조 적용"""
         self.logger.info(f"모니터링 루프 시작 - 갱신 간격: {self.refresh_interval}ms")
+        
+        consecutive_failures = 0
+        max_failures = 10
         
         while self.is_monitoring:
             try:
                 start_time = time.time()
                 
-                # 화면 데이터 요청
-                self.request_screen_data()
+                # 연결 상태 확인
+                if not self.communicator.is_connected():
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_failures:
+                        self.logger.warning("연결 끊어짐 감지 - 테스트 데이터로 전환")
+                        self.display_test_screen()
+                        consecutive_failures = max_failures // 2
+                    time.sleep(1.0)
+                    continue
                 
-                # 상태 데이터 요청
-                self.request_status_data()
+                # 통합 화면+상태 요청 (원본 구조)
+                success = self.integrated_screen_status_request()
+                
+                if success:
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
                 
                 # 성능 측정
                 elapsed_time = time.time() - start_time
                 self.performance_monitor.record_timing('monitoring_cycle', elapsed_time)
                 
-                # 갱신 간격 대기 (실제 사용되는 값 로그)
-                sleep_time = self.refresh_interval / 1000.0
-                self.logger.debug(f"다음 요청까지 대기: {sleep_time:.3f}초")
+                # 갱신 간격 대기
+                sleep_time = max(0.05, self.refresh_interval / 1000.0)  # 최소 50ms
                 time.sleep(sleep_time)
                 
             except Exception as e:
                 self.logger.error(f"모니터링 루프 오류: {e}")
-                time.sleep(1)  # 오류 발생 시 잠시 대기
+                consecutive_failures += 1
+                time.sleep(1)  # 오류 발생 시 대기
         
         self.logger.info("모니터링 루프 종료")
     
-    def request_screen_data(self):
-        """화면 데이터 요청"""
-        if self.communicator.is_connected():
-            self.communication_stats['command_count'] += 1
-            self.communication_stats['last_command_time'] = time.time()
-            
-            self.logger.debug(f"화면 데이터 요청 전송: {COMMANDS['SCREEN_REQUEST']}")
-            result = self.communicator.send_command(COMMANDS['SCREEN_REQUEST'])
-            
-            if not result:
-                self.logger.error("화면 데이터 요청 전송 실패")
-            else:
-                self.logger.debug("화면 데이터 요청 전송 성공")
-    
-    def request_status_data(self):
-        """상태 데이터 요청"""
-        if self.communicator.is_connected():
-            self.communication_stats['command_count'] += 1
-            self.communication_stats['last_command_time'] = time.time()
-            
-            self.logger.debug(f"상태 데이터 요청 전송: {COMMANDS['STATUS_REQUEST']}")
-            result = self.communicator.send_command(COMMANDS['STATUS_REQUEST'])
-            
-            if not result:
-                self.logger.error("상태 데이터 요청 전송 실패")
-            else:
-                self.logger.debug("상태 데이터 요청 전송 성공")
-    
-    def request_screen_manual(self):
-        """수동 화면 요청"""
-        self.request_screen_data()
-    
-    def request_status_manual(self):
-        """수동 상태 요청"""
-        self.request_status_data()
-    
-    def test_ping(self):
-        """PING 테스트"""
-        if self.communicator.is_connected():
-            self.logger.info("PING 테스트 시작")
-            result = self.communicator.send_command(COMMANDS['PING'])
-            if result:
-                self.logger.info("PING 명령 전송 성공")
-            else:
-                self.logger.error("PING 명령 전송 실패")
-        else:
-            messagebox.showwarning("경고", "장치가 연결되지 않았습니다")
-    
-    def test_connection_status(self):
-        """연결 상태 테스트"""
-        if self.communicator.is_connected():
-            stats = self.communicator.get_stats()
-            port_info = stats.get('port_info', {})
-            
-            status_msg = f"""연결 상태:
-포트: {port_info.get('device', 'N/A')}
-보드레이트: {port_info.get('baudrate', 'N/A')}
-전송 바이트: {stats.get('bytes_sent', 0)}
-수신 바이트: {stats.get('bytes_received', 0)}
-명령 전송: {stats.get('commands_sent', 0)}
-응답 수신: {stats.get('responses_received', 0)}"""
-            
-            messagebox.showinfo("연결 상태", status_msg)
-            self.logger.info(f"연결 상태 확인: {stats}")
-        else:
-            messagebox.showwarning("경고", "장치가 연결되지 않았습니다")
-    
-    def on_data_received(self, data: bytes):
-        """데이터 수신 이벤트"""
+    def integrated_screen_status_request(self) -> bool:
+        """통합 화면+상태 요청 - 원본 로직 적용"""
+        if not self.communicator.is_connected():
+            return False
+        
         try:
-            # 통신 통계 업데이트
-            self.communication_stats['response_count'] += 1
-            self.communication_stats['last_response_time'] = time.time()
+            # 명령 전송 후 응답 대기 (2초 타임아웃)
+            response = self.communicator.send_command_and_wait(COMMANDS['SCREEN_REQUEST'], 2000)
             
-            # 데이터 크기 로그 (한 번만)
-            self.logger.debug(f"데이터 수신: {len(data)} bytes")
+            if not response:
+                return False
             
-            # 통합 파서로 데이터 파싱
-            screen_data, status_data = self.parser.parse_combined_data(data)
+            # 통합 응답 파싱
+            screen_data, status_data = self.parse_integrated_response(response)
             
             # 화면 데이터 처리
             if screen_data is not None:
                 self.current_screen_data = screen_data
                 self.root.after(0, self.update_screen_display)
-                self.logger.debug("화면 데이터 업데이트 예약")
             
             # 상태 데이터 처리
             if status_data is not None:
                 self.current_status_data = status_data
                 self.root.after(0, self.update_status_display)
-                self.logger.debug(f"상태 데이터 업데이트 예약: {status_data.get('status', 'UNKNOWN')}")
                 
-                # 상태 로그 기록 (한 번만)
+                # 상태 로그 기록
                 self.logger.log_status(status_data)
             
-            # 데이터가 없으면 경고 (한 번만)
-            if screen_data is None and status_data is None:
-                self.logger.warning("파싱된 데이터가 없음")
+            # 성공 여부 반환
+            return screen_data is not None or status_data is not None
+            
+        except Exception as e:
+            self.logger.error(f"통합 요청 오류: {e}")
+            return False
+    
+    def parse_integrated_response(self, response_data: bytes) -> tuple:
+        """통합 응답 파싱 - 원본 로직 적용"""
+        try:
+            screen_data = None
+            status_data = None
+            
+            # 데이터 크기 제한 (메모리 보호)
+            if len(response_data) > 10000:
+                response_data = response_data[:10000]
+            
+            # 새로운 펌웨어 형식: <<SCREEN_START>> ... <<SCREEN_END>> STATUS: ...
+            if b'<<SCREEN_START>>' in response_data and b'<<SCREEN_END>>' in response_data:
+                # 화면 데이터 추출
+                screen_data = self.extract_screen_data(response_data)
+                
+                # 상태 데이터 추출
+                status_data = self.extract_status_data(response_data)
+                
+            else:
+                # 기존 형식 또는 단순 응답
+                # 통합 파서로 처리
+                screen_data, status_data = self.parser.parse_combined_data(response_data)
+            
+            return screen_data, status_data
+            
+        except Exception as e:
+            self.logger.error(f"통합 응답 파싱 오류: {e}")
+            return None, None
+    
+    def extract_screen_data(self, response_data: bytes):
+        """화면 데이터 추출 - 원본 로직"""
+        try:
+            screen_start = response_data.find(b'<<SCREEN_START>>')
+            screen_end = response_data.find(b'<<SCREEN_END>>')
+            
+            if screen_start == -1 or screen_end == -1 or screen_end <= screen_start:
+                return None
+            
+            screen_section = response_data[screen_start:screen_end + len(b'<<SCREEN_END>>')]
+            
+            # 실제 이미지 데이터 찾기
+            data_start_pos = screen_section.find(b'<<DATA_START>>')
+            data_end_pos = screen_section.find(b'<<DATA_END>>')
+            
+            if data_start_pos != -1 and data_end_pos != -1 and data_end_pos > data_start_pos:
+                # 데이터 시작점 (개행문자 스킵)
+                data_content_start = data_start_pos + len(b'<<DATA_START>>')
+                while data_content_start < data_end_pos:
+                    if screen_section[data_content_start:data_content_start+1] in [b'\n', b'\r']:
+                        data_content_start += 1
+                    else:
+                        break
+                
+                img_data = screen_section[data_content_start:data_end_pos]
+                
+                if len(img_data) >= 1024:
+                    # 화면 파서로 파싱
+                    screen_data = self.parser.screen_parser.parse_firmware_screen_data_enhanced(img_data[:1024])
+                    
+                    if screen_data is not None:
+                        return screen_data
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"화면 데이터 추출 오류: {e}")
+            return None
+    
+    def extract_status_data(self, response_data: bytes):
+        """상태 데이터 추출 - 원본 로직"""
+        try:
+            status_pos = response_data.find(b'STATUS:')
+            
+            if status_pos == -1:
+                return None
+            
+            # STATUS: 이후 첫 번째 라인 추출
+            status_start = status_pos
+            status_end = status_pos + 200  # 최대 200자
+            
+            # 개행문자로 끝나는 지점 찾기
+            newline_pos = response_data.find(b'\n', status_start)
+            if newline_pos != -1 and newline_pos < status_end:
+                status_end = newline_pos
+                
+            crlf_pos = response_data.find(b'\r\n', status_start)
+            if crlf_pos != -1 and crlf_pos < status_end:
+                status_end = crlf_pos
+            
+            # 응답 데이터 끝을 넘지 않도록
+            if status_end > len(response_data):
+                status_end = len(response_data)
+            
+            if status_end > status_start:
+                status_raw = response_data[status_start:status_end]
+                
+                # 상태 파서로 파싱
+                status_data = self.parser.status_parser.parse_status_data(status_raw)
+                
+                if status_data is not None:
+                    return status_data
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"상태 데이터 추출 오류: {e}")
+            return None
+    
+    def request_screen_manual(self):
+        """수동 화면 요청 - 새로운 구조"""
+        if not self.communicator.is_connected():
+            messagebox.showwarning("경고", "장치가 연결되지 않았습니다")
+            return
+        
+        try:
+            self.logger.info("수동 화면 요청 시작")
+            success = self.integrated_screen_status_request()
+            
+            if success:
+                self.logger.info("수동 화면 요청 성공")
+            else:
+                self.logger.warning("수동 화면 요청 실패")
+                messagebox.showwarning("경고", "화면 요청에 실패했습니다")
                 
         except Exception as e:
-            self.logger.error(f"데이터 처리 오류: {e}")
-            import traceback
-            self.logger.error(f"상세 오류: {traceback.format_exc()}")
+            self.logger.error(f"수동 화면 요청 오류: {e}")
+            messagebox.showerror("오류", f"화면 요청 중 오류 발생: {e}")
+    
+    def request_status_manual(self):
+        """수동 상태 요청 - 새로운 구조"""
+        if not self.communicator.is_connected():
+            messagebox.showwarning("경고", "장치가 연결되지 않았습니다")
+            return
+        
+        try:
+            self.logger.info("수동 상태 요청 시작")
+            response = self.communicator.send_command_and_wait(COMMANDS['STATUS_REQUEST'], 1000)
+            
+            if response:
+                status_data = self.parser.status_parser.parse_status_data(response)
+                if status_data:
+                    self.current_status_data = status_data
+                    self.update_status_display()
+                    self.logger.info(f"수동 상태 요청 성공: {status_data.get('status', 'UNKNOWN')}")
+                else:
+                    self.logger.warning("상태 데이터 파싱 실패")
+                    messagebox.showwarning("경고", "상태 데이터를 파싱할 수 없습니다")
+            else:
+                self.logger.warning("상태 요청 응답 없음")
+                messagebox.showwarning("경고", "상태 요청에 응답이 없습니다")
+                
+        except Exception as e:
+            self.logger.error(f"수동 상태 요청 오류: {e}")
+            messagebox.showerror("오류", f"상태 요청 중 오류 발생: {e}")
+    
+    def test_ping(self):
+        """PING 테스트 - 새로운 구조"""
+        if not self.communicator.is_connected():
+            messagebox.showwarning("경고", "장치가 연결되지 않았습니다")
+            return
+        
+        try:
+            self.logger.info("PING 테스트 시작")
+            response = self.communicator.send_command_and_wait(COMMANDS['PING'], 1000)
+            
+            if response and (b'PONG' in response or b'OK' in response):
+                self.logger.info("PING 테스트 성공")
+                messagebox.showinfo("성공", "PING 테스트 성공")
+            else:
+                self.logger.warning("PING 테스트 실패")
+                messagebox.showwarning("경고", "PING 테스트에 실패했습니다")
+                
+        except Exception as e:
+            self.logger.error(f"PING 테스트 오류: {e}")
+            messagebox.showerror("오류", f"PING 테스트 중 오류 발생: {e}")
+    
+    def test_connection_status(self):
+        """연결 상태 테스트 - 새로운 구조"""
+        if not self.communicator.is_connected():
+            messagebox.showwarning("경고", "장치가 연결되지 않았습니다")
+            return
+        
+        try:
+            stats = self.communicator.get_stats()
+            
+            status_msg = f"""연결 상태:
+포트: {getattr(self.communicator.serial_port, 'port', 'N/A')}
+보드레이트: {getattr(self.communicator.serial_port, 'baudrate', 'N/A')}
+전송 바이트: {stats.get('bytes_sent', 0)}
+수신 바이트: {stats.get('bytes_received', 0)}
+명령 전송: {stats.get('commands_sent', 0)}
+응답 수신: {stats.get('responses_received', 0)}
+연결 시도: {stats.get('connection_attempts', 0)}
+연결 실패: {stats.get('connection_failures', 0)}"""
+            
+            messagebox.showinfo("연결 상태", status_msg)
+            self.logger.info(f"연결 상태 확인: {stats}")
+            
+        except Exception as e:
+            self.logger.error(f"연결 상태 확인 오류: {e}")
+            messagebox.showerror("오류", f"연결 상태 확인 중 오류 발생: {e}")
     
     def update_screen_display(self):
         """화면 표시 업데이트"""
         if self.current_screen_data is None:
-            self.logger.debug("화면 데이터가 없음")
             return
         
         try:
@@ -612,12 +799,8 @@ class OptimizedOLEDMonitor:
             self.screen_canvas.create_image(0, 0, anchor=tk.NW, image=photo)
             self.screen_canvas.image = photo  # 참조 유지
             
-            self.logger.debug(f"화면 표시 업데이트 완료: {self.current_screen_data.shape}")
-            
         except Exception as e:
             self.logger.error(f"화면 표시 업데이트 오류: {e}")
-            import traceback
-            self.logger.error(f"상세 오류: {traceback.format_exc()}")
     
     def update_status_display(self):
         """상태 표시 업데이트"""
@@ -630,17 +813,15 @@ class OptimizedOLEDMonitor:
                 value = self.current_status_data.get(field, "N/A")
                 
                 if field == 'battery':
-                    # 배터리 값을 전압으로 표시 (0~5000 -> 0.00~50.00V)
+                    # 배터리 값을 전압으로 표시 (원본 로직: 이미 /100 처리됨)
                     if isinstance(value, (int, float)) and value != "N/A":
-                        voltage = value / 100.0
-                        value = f"{voltage:.2f}V"
+                        value = f"{value:.2f}V"
                     else:
                         value = "N/A"
                 elif field == 'bat_adc':
-                    # ADC 값도 전압으로 변환 (0~4095 -> 0.00~3.30V, 3.3V 기준)
+                    # ADC 값 그대로 표시 (원본 로직)
                     if isinstance(value, (int, float)) and value != "N/A":
-                        adc_voltage = (value / 4095.0) * 3.3
-                        value = f"{adc_voltage:.2f}V"
+                        value = f"{value}"
                     else:
                         value = "N/A"
                 elif field in ['l1_connected', 'l2_connected']:
@@ -701,8 +882,6 @@ class OptimizedOLEDMonitor:
             
         except Exception as e:
             self.logger.error(f"성능 표시 업데이트 오류: {e}")
-            import traceback
-            self.logger.error(f"상세 오류: {traceback.format_exc()}")
     
     def display_test_screen(self):
         """테스트 화면 표시"""
@@ -755,6 +934,39 @@ class OptimizedOLEDMonitor:
                 messagebox.showwarning("경고", "지원되지 않는 통신속도입니다.")
         except Exception as e:
             self.logger.error(f"통신속도 변경 오류: {e}")
+    
+    def on_parsing_method_changed(self, event):
+        """파싱 방법 변경 이벤트 처리"""
+        try:
+            new_method = self.parsing_var.get()
+            
+            # 화면 파서의 파싱 방법 업데이트
+            self.parser.screen_parser.set_parsing_method(new_method)
+            
+            self.logger.info(f"화면 방향 변경: {new_method}")
+            
+            # 현재 화면 데이터가 있으면 새로운 방법으로 재파싱
+            if hasattr(self.parser.screen_parser, 'last_raw_data') and self.parser.screen_parser.last_raw_data is not None:
+                # 마지막 원본 데이터를 새 파싱 방법으로 재처리
+                screen_data = self.parser.screen_parser.parse_firmware_screen_data_enhanced(
+                    self.parser.screen_parser.last_raw_data
+                )
+                if screen_data is not None:
+                    self.current_screen_data = screen_data
+                    self.root.after(0, self.update_screen_display)
+                    self.logger.info("화면 방향 변경 적용 완료")
+            elif self.current_screen_data is None:
+                # 테스트 화면 생성
+                test_screen = self.parser.screen_parser.create_test_screen("checkerboard")
+                if test_screen is not None:
+                    self.current_screen_data = test_screen
+                    self.root.after(0, self.update_screen_display)
+            
+            # 설정 저장
+            self.config_manager.set('display.parsing_method', new_method)
+            
+        except Exception as e:
+            self.logger.error(f"파싱 방법 변경 오류: {e}")
     
     def on_connection_event(self, event_type: str, event_data: Dict):
         """연결 이벤트 처리"""

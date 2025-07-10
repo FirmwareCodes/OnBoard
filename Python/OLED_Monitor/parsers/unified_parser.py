@@ -33,28 +33,25 @@ class UnifiedDataParser(DataParserInterface):
         
     def parse_screen_data(self, data: bytes) -> Optional[np.ndarray]:
         """화면 데이터 파싱"""
-        start_time = time.time()
         try:
-            result = self._safe_parse_with_timeout(
-                self.screen_parser.parse_screen_data, 
-                data, 
-                "화면 데이터 파싱"
-            )
+            self.logger.debug(f"화면 데이터 파싱 시작: {len(data)} bytes")
             
-            if result is not None:
+            # 화면 파서 사용
+            screen_data = self.screen_parser.parse(data)
+            
+            if screen_data is not None:
                 self.parsing_stats['screen_success'] += 1
-                return result
+                self.logger.debug(f"화면 파싱 성공: {screen_data.shape}")
+                return screen_data
             else:
                 self.parsing_stats['screen_failure'] += 1
+                self.logger.warning("화면 파싱 실패")
                 return None
                 
         except Exception as e:
             self.parsing_stats['screen_failure'] += 1
-            self.logger.error(f"화면 데이터 파싱 실패: {e}")
+            self.logger.error(f"화면 데이터 파싱 오류: {e}")
             return None
-        finally:
-            parsing_time = time.time() - start_time
-            self._update_parsing_stats(parsing_time)
     
     def parse_status_data(self, data: bytes) -> Optional[Dict[str, Any]]:
         """상태 데이터 파싱"""
