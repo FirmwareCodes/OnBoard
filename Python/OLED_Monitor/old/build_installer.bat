@@ -144,6 +144,8 @@ echo.
 echo [7/9] 생성된 EXE 파일 확인...
 if not exist "%DIST_DIR%\OnBoard_OLED_Monitor.exe" (
     echo ❌ EXE 파일이 생성되지 않았습니다!
+    echo 현재 dist 폴더 확인...
+    dir "%DIST_DIR%" /B
     pause
     exit /b 1
 )
@@ -159,30 +161,120 @@ echo 파일 크기: %EXE_SIZE_MB% MB
 echo.
 
 echo [8/9] EXE 파일을 run 폴더로 이동...
-copy "%DIST_DIR%\OnBoard_OLED_Monitor.exe" "%RUN_DIR%\" >nul
+echo 복사 중: "%DIST_DIR%\OnBoard_OLED_Monitor.exe" → "%RUN_DIR%\"
+
+REM 복사 전 대상 파일이 사용 중인지 확인
+if exist "%RUN_DIR%\OnBoard_OLED_Monitor.exe" (
+    echo 기존 EXE 파일 삭제 중...
+    del /f /q "%RUN_DIR%\OnBoard_OLED_Monitor.exe" 2>nul
+    if exist "%RUN_DIR%\OnBoard_OLED_Monitor.exe" (
+        echo ⚠️ 기존 파일이 사용 중입니다. 잠시 후 다시 시도해주세요.
+        timeout /t 2 /nobreak >nul
+        del /f /q "%RUN_DIR%\OnBoard_OLED_Monitor.exe" 2>nul
+    )
+)
+
+REM EXE 파일 복사
+copy "%DIST_DIR%\OnBoard_OLED_Monitor.exe" "%RUN_DIR%\" >nul 2>&1
 if errorlevel 1 (
     echo ❌ EXE 파일 복사 실패!
+    echo 원본: "%DIST_DIR%\OnBoard_OLED_Monitor.exe"
+    echo 대상: "%RUN_DIR%\OnBoard_OLED_Monitor.exe"
+    echo.
+    echo 원본 파일 존재 여부:
+    if exist "%DIST_DIR%\OnBoard_OLED_Monitor.exe" (
+        echo ✅ 원본 파일 존재
+    ) else (
+        echo ❌ 원본 파일 없음
+    )
+    echo.
+    echo 대상 폴더 존재 여부:
+    if exist "%RUN_DIR%" (
+        echo ✅ 대상 폴더 존재
+    ) else (
+        echo ❌ 대상 폴더 없음 - 생성 중...
+        mkdir "%RUN_DIR%"
+    )
+    echo.
+    echo 다시 시도...
+    copy "%DIST_DIR%\OnBoard_OLED_Monitor.exe" "%RUN_DIR%\" 2>&1
+    if errorlevel 1 (
+        pause
+        exit /b 1
+    )
+)
+
+REM 복사 확인
+if exist "%RUN_DIR%\OnBoard_OLED_Monitor.exe" (
+    echo ✅ EXE 파일 이동 완료: %RUN_DIR%\OnBoard_OLED_Monitor.exe
+) else (
+    echo ❌ EXE 파일 이동 실패!
     pause
     exit /b 1
 )
-
-echo ✅ EXE 파일 이동 완료: %RUN_DIR%\OnBoard_OLED_Monitor.exe
 echo.
 
 echo [9/9] 빌드 파일 정리...
+
+REM 파일이 사용 중일 수 있으므로 잠시 대기
+timeout /t 1 /nobreak >nul
+
 echo build 폴더 삭제 중...
 if exist "%BUILD_DIR%" (
-    rmdir /s /q "%BUILD_DIR%"
+    REM 폴더 내용 확인
+    dir "%BUILD_DIR%" /B 2>nul | findstr . >nul
+    if not errorlevel 1 (
+        echo 폴더에 파일이 있습니다. 강제 삭제 중...
+        rmdir /s /q "%BUILD_DIR%" 2>nul
+        if exist "%BUILD_DIR%" (
+            echo ⚠️ build 폴더 삭제 실패 - 수동으로 삭제하세요: %BUILD_DIR%
+        ) else (
+            echo ✅ build 폴더 삭제 완료
+        )
+    ) else (
+        rmdir "%BUILD_DIR%" 2>nul
+        echo ✅ build 폴더 삭제 완료
+    )
+) else (
+    echo ✅ build 폴더 없음
 )
 
 echo dist 폴더 삭제 중...
 if exist "%DIST_DIR%" (
-    rmdir /s /q "%DIST_DIR%"
+    REM 폴더 내용 확인
+    dir "%DIST_DIR%" /B 2>nul | findstr . >nul
+    if not errorlevel 1 (
+        echo 폴더에 파일이 있습니다. 강제 삭제 중...
+        rmdir /s /q "%DIST_DIR%" 2>nul
+        if exist "%DIST_DIR%" (
+            echo ⚠️ dist 폴더 삭제 실패 - 수동으로 삭제하세요: %DIST_DIR%
+        ) else (
+            echo ✅ dist 폴더 삭제 완료
+        )
+    ) else (
+        rmdir "%DIST_DIR%" 2>nul
+        echo ✅ dist 폴더 삭제 완료
+    )
+) else (
+    echo ✅ dist 폴더 없음
 )
 
 echo spec 파일 삭제 중...
 if exist "OnBoard_OLED_Monitor.spec" (
-    del /q "OnBoard_OLED_Monitor.spec"
+    del /f /q "OnBoard_OLED_Monitor.spec" 2>nul
+    if exist "OnBoard_OLED_Monitor.spec" (
+        echo ⚠️ spec 파일 삭제 실패
+    ) else (
+        echo ✅ spec 파일 삭제 완료
+    )
+) else (
+    echo ✅ spec 파일 없음
+)
+
+REM __pycache__ 폴더도 정리
+if exist "__pycache__" (
+    echo __pycache__ 폴더 삭제 중...
+    rmdir /s /q "__pycache__" 2>nul
 )
 
 echo ✅ 빌드 파일 정리 완료

@@ -84,7 +84,6 @@ class OLEDMonitor:
         self.log_throttle = {}
         
         # 초기화
-        self.setup_status_logging()
         self.setup_fallback_logging()
         self.setup_serial_parser()
         self.setup_gui()
@@ -117,15 +116,10 @@ class OLEDMonitor:
             # 현재 실행 위치 기준으로 logs 폴더 생성
             import os
             current_dir = os.getcwd()
-            self.log_dir = os.path.join(current_dir, "logs")
-            
-            # logs 폴더가 없으면 생성
-            if not os.path.exists(self.log_dir):
-                os.makedirs(self.log_dir)
-                print(f"📁 로그 폴더 생성: {self.log_dir}")
+           
             
             # 로그 파일 경로 설정
-            timestamp = datetime.now().strftime("%Y%m%d_%")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
             # 상태 로그 파일만 생성 (파싱된 결과)
             self.status_log_file = os.path.join(self.log_dir, f"status_log_{timestamp}.txt")
@@ -157,7 +151,7 @@ class OLEDMonitor:
             os.makedirs(self.log_directory, exist_ok=True)
             
             # 오늘 날짜로 상태 로그 파일명 생성
-            today = datetime.now().strftime("%Y%m%d")
+            today = datetime.now().strftime("%Y%m%d%H%M%S")
             self.status_log_file = os.path.join(self.log_directory, f"status_log_{today}.txt")
             
             # 상태 로그 파일 초기화 (헤더 작성)
@@ -3839,39 +3833,6 @@ if __name__ == "__main__":
         print("\n[상세 오류 정보]")
         print(traceback.format_exc())
         
-        # 오류 로그 파일 저장
-        try:
-            from datetime import datetime
-            import os
-            
-            # logs 폴더 생성
-            if not os.path.exists("logs"):
-                os.makedirs("logs")
-                
-            # 오류 로그 파일 생성
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_filename = f"logs/error_log_{timestamp}.txt"
-            
-            with open(log_filename, 'w', encoding='utf-8') as f:
-                f.write(f"OnBoard OLED Monitor 오류 로그\n")
-                f.write(f"발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"오류 타입: {type(e).__name__}\n")
-                f.write(f"오류 메시지: {str(e)}\n\n")
-                f.write("상세 오류 정보:\n")
-                f.write(traceback.format_exc())
-                
-            print(f"\n오류 로그가 저장되었습니다: {log_filename}")
-            
-        except Exception as log_error:
-            print(f"오류 로그 저장 실패: {str(log_error)}")
-        
-        print("\n[해결 방법]")
-        print("1. 시리얼 포트 연결을 확인하세요")
-        print("2. 다른 프로그램이 포트를 사용 중인지 확인하세요")
-        print("3. 펌웨어가 정상 동작하는지 확인하세요")
-        print("4. 로그 파일을 확인하거나 개발자에게 문의하세요")
-        
-        input("\n계속하려면 Enter를 누르세요...")
     finally:
         print("프로그램을 정리 중...")
         try:
