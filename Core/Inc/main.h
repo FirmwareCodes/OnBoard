@@ -116,6 +116,7 @@ typedef struct
     LED_State_t LED2_State;    // LED2 상태
     uint32_t State_Start_Time; // 상태 시작 시간
     uint16_t Current_PWM_Duty; // 현재 PWM 듀티
+    bool Cut_Off_PWM;          // PWM 차단 여부
 
     // VBat 필터링 관련 필드들
     uint16_t VBat_Filtered;                 // 필터링된 VBat 값
@@ -238,6 +239,8 @@ typedef struct
 #define BATTERY_MAX 3720 //25.2V
 #define BATTERY_FULL 3640 
 #define BATTERY_MIN 2740 //18.6V
+
+#define WARNING_BATTERY_VOLTAGE 20.0f
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */

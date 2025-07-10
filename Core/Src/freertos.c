@@ -117,6 +117,7 @@ Adc_t Adc_State = {
     .LED2_State = LED_STATE_MIDDLE, // LED2 상태
     .State_Start_Time = 0,          // 상태 시작 시간
     .Current_PWM_Duty = 0,          // 현재 PWM 듀티
+    .Cut_Off_PWM = false,           // PWM 차단 여부
     .VBat_Filtered = 0,             // 필터링된 VBat 값
     .VBat_Buffer = {0},             // VBat 이동평균 버퍼
     .VBat_Buffer_Index = 0,         // VBat 버퍼 인덱스
@@ -519,8 +520,19 @@ void StartAdcTask(void *argument)
       last_button_state = Button_State.is_Start_Timer;
     }
 
+    // 배터리 전압 기반 PWM 차단 로직
+    if(!Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) < 17.1f)
+    {
+      Adc_State.Cut_Off_PWM = true;
+    }
+    else if(Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) > 18.6f)
+    {
+      Adc_State.Cut_Off_PWM = false;
+    }
+
+    
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4,
-                          Button_State.is_Start_Timer ? Adc_State.Current_PWM_Duty : DUTY_0);
+                          Button_State.is_Start_Timer ? Adc_State.Cut_Off_PWM ? DUTY_0 : Adc_State.Current_PWM_Duty : DUTY_0);
 
     vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
   }

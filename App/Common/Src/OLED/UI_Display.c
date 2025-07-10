@@ -477,8 +477,8 @@ void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
 void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 {
     // 전압을 퍼센트로 변환 (19.0V = 0%, 24.7V = 100%)
-    const float MIN_VOLTAGE = 19.0f;
-    const float MAX_VOLTAGE = 24.7f;
+    const float MIN_VOLTAGE = 18.6f;
+    const float MAX_VOLTAGE = 24.2f;
     const float WARNING_VOLTAGE = 20.0f; // 경고 전압 임계값
 
     // 애니메이션 중이면 애니메이션 전압 사용, 아니면 실제 전압 사용
@@ -557,8 +557,8 @@ void UI_DrawBatteryVoltage(float voltage)
         UI_DrawDigitLarge(clear_x + 21, base_y, voltage_frac, COLOR_WHITE, 1.5);
     }
 
-    // 전압 표시 아이콘 (V) 그리기 - Font16으로 변경하여 더 굵고 큰 사이즈
-    Paint_DrawString_EN(base_x + 15, base_y + 16, "V", &Font16, COLOR_WHITE, COLOR_BLACK);
+    // 전압 표시 아이콘 (V) 그리기
+    UI_DrawIcon12x16(base_x + 13, base_y + 16, voltage_v_12x16, COLOR_WHITE);
 }
 
 /**
@@ -878,6 +878,26 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         UI_DrawLEDStatus(status->l1_connected, status->l2_connected);
         prev_l1_connected = status->l1_connected;
         prev_l2_connected = status->l2_connected;
+    }
+
+    // 배터리 부족 경고
+    if (status->battery_voltage < WARNING_BATTERY_VOLTAGE)
+    {
+        uint8_t interval = (status->battery_voltage / 5) + 1;
+        uint16_t update_interval = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS * interval / UI_UPDATE_INTERVAL_MS));
+        // 느낌표 아이콘 그리기
+        if (update_interval == 0 || update_interval == 1)
+        {
+            UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_BLACK);
+        }
+        else
+        {
+            UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_WHITE);
+        }
+    }
+    else
+    {
+        UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_BLACK);
     }
 
     // 배터리 전압 업데이트 (값이 변경된 경우)

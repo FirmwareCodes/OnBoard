@@ -146,6 +146,9 @@ extern const unsigned char exclamation_12x16[];
 // 전기 아이콘 비트맵 (12x16)
 extern const unsigned char electric_12x16[];
 
+// V 전압 아이콘 비트맵들
+extern const unsigned char voltage_v_12x16[];          // 명확한 V 형태 12x16
+
 // 빈 아이콘 비트맵 (12x16)
 extern const unsigned char empty_12x16[];
 
