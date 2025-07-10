@@ -499,20 +499,6 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 
     // 원형 프로그래스바 그리기
     UI_DrawCircularProgressOptimized(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, progress, progress_color, 1);
-
-    // 20V 이하일 때 경고 표시 추가 (애니메이션 완료 후에만)
-    if (current_voltage < WARNING_VOLTAGE && !status->init_animation_active)
-    {
-        // 프로그래스바 중앙에 경고 아이콘 표시 (느낌표)
-        uint16_t warning_x = INFO_AREA_X - 15;
-        uint16_t warning_y = INFO_AREA_Y + 2;
-
-        // 느낌표 상단 부분 (세로선)
-        Paint_DrawLine(warning_x + 2, warning_y, warning_x + 2, warning_y + 10, COLOR_WHITE, DOT_PIXEL_2X2, LINE_STYLE_SOLID);
-
-        // 느낌표 하단 점
-        Paint_DrawRectangle(warning_x + 1, warning_y + 12, warning_x + 3, warning_y + 14, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    }
 }
 
 /**
@@ -880,11 +866,16 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         prev_l2_connected = status->l2_connected;
     }
 
+    // 배터리 부족 경고 아이콘 위치
+    uint16_t base_x = 62; // 중앙 정렬 조정
+    uint16_t base_y = 2;  // 중앙 정렬 조정
+
     // 배터리 부족 경고
     if (status->battery_voltage < WARNING_BATTERY_VOLTAGE)
     {
-        uint8_t interval = (status->battery_voltage / 5) + 1;
+        uint8_t interval = abs(status->battery_voltage - 16) + (status->battery_voltage < 17.0f ? 1 : 0);
         uint16_t update_interval = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS * interval / UI_UPDATE_INTERVAL_MS));
+
         // 느낌표 아이콘 그리기
         if (update_interval == 0 || update_interval == 1)
         {
