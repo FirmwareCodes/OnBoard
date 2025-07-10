@@ -183,10 +183,10 @@ class SerialDataParser:
                         if key == 'BAT':
                             # 배터리 파싱 (안전한 처리)
                             try:
-                                battery_str = value.replace('%', '').strip()
+                                battery_str = value.replace('V', '').strip()
                                 if battery_str.isdigit():
                                     battery_val = int(battery_str)
-                                    status_info['battery'] = max(0, min(100, battery_val))
+                                    status_info['battery'] = battery_val/100
                                 else:
                                     status_info['battery'] = 0
                             except (ValueError, TypeError):

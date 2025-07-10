@@ -674,8 +674,8 @@ class LogAnalyzer:
         battery_levels = []
         for entry in entries:
             try:
-                if entry['battery'] != 'N/A' and '%' in entry['battery']:
-                    level = int(entry['battery'].replace('%', ''))
+                if entry['battery'] != 'N/A' and 'V' in entry['battery']:
+                    level = int(entry['battery'].replace('V', ''))
                     battery_levels.append(level)
             except ValueError:
                 continue
@@ -724,7 +724,7 @@ if __name__ == "__main__":
     # StatusLogger 테스트
     status_logger = StatusLogger()
     test_status = {
-        'battery': 75,
+        'battery': 18.6,
         'timer': '05:30',
         'status': 'RUNNING',
         'l1_connected': True,

@@ -96,14 +96,14 @@ float Battery_ADC_To_Voltage(uint16_t adc_value)
     const float VOLTAGE_MIN = 18.6f;  // 최소 전압 (V)
     
     // ADC 값이 측정 범위를 벗어나는 경우 처리
-    if (adc_value >= ADC_MAX)
-    {
-        return VOLTAGE_MAX;
-    }
-    else if (adc_value <= ADC_MIN)
-    {
-        return VOLTAGE_MIN;
-    }
+    // if (adc_value >= ADC_MAX)
+    // {
+    //     return VOLTAGE_MAX;
+    // }
+    // else if (adc_value <= ADC_MIN)
+    // {
+    //     return VOLTAGE_MIN;
+    // }
     
     // 선형 보간을 사용한 전압 계산
     // Voltage = VOLTAGE_MIN + (adc_value - ADC_MIN) * (VOLTAGE_MAX - VOLTAGE_MIN) / (ADC_MAX - ADC_MIN)

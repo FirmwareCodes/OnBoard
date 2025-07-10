@@ -1320,8 +1320,8 @@ class OLEDMonitor:
                                     
                                     if key == 'BAT':
                                         try:
-                                            battery_val = int(value.replace('%', ''))
-                                            status_info['battery'] = max(0, min(100, battery_val))
+                                            battery_val = int(value.replace('V', ''))
+                                            status_info['battery'] = battery_val/100
                                         except:
                                             pass
                                     elif key == 'TIMER' and len(value) <= 8:
@@ -2367,7 +2367,7 @@ class OLEDMonitor:
             
             # 응답이 없거나 파싱 실패시 테스트 데이터 사용
             test_status = {
-                'battery': 75,
+                'battery': 18.6,
                 'timer': '99:99',
                 'status': 'ERROR',
                 'l1_connected': True,
@@ -2447,9 +2447,9 @@ class OLEDMonitor:
                     # 각 항목별 파싱
                     if key == 'BAT':
                         try:
-                            battery_str = value.replace('%', '').strip()
+                            battery_str = value.replace('V', '').strip()
                             battery_val = int(battery_str)
-                            status_info['battery'] = max(0, min(100, battery_val))
+                            status_info['battery'] = battery_val/100
                         except:
                             pass
                             
@@ -3769,9 +3769,9 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
                     # 각 항목별 파싱
                     if key == 'BAT':
                         try:
-                            battery_str = value.replace('%', '').strip()
+                            battery_str = value.replace('V', '').strip()
                             battery_val = int(battery_str)
-                            status_info['battery'] = max(0, min(100, battery_val))
+                            status_info['battery'] = battery_val/100
                         except:
                             pass
                             

@@ -2,7 +2,6 @@
 #include "def.h"
 #include "battery_monitor.h"
 
-
 extern UART_State_t UART_State;
 extern osTimerId_t MainTimerHandle;
 extern Button_t Button_State;
@@ -175,7 +174,6 @@ void UART_SendScreenData(void)
   // 전송 완료 후 안정화 딜레이
   osDelay(3);
 
-
   // 데이터 종료 마커
   const char *data_end_marker = "\n<<DATA_END>>\n";
   HAL_UART_Transmit(&huart1, (uint8_t *)data_end_marker, strlen(data_end_marker), 1000);
@@ -208,18 +206,8 @@ __attribute__((optimize("O0"))) void UART_SendStatusData(void)
   char status_buffer[256];
 
   // 새로운 배터리 모니터링 시스템에서 소수점 값 사용
-  float battery_percent_float = Battery_Get_Percentage_Float(&Battery_Monitor);
   float battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
-  
-  // 배터리 퍼센트 범위 체크
-  if (battery_percent_float > 100.0f)
-  {
-    battery_percent_float = 100.0f;
-  }
-  else if (battery_percent_float < 0.0f)
-  {
-    battery_percent_float = 0.0f;
-  }
+  uint16_t battery_voltage_int = (uint8_t)(battery_voltage * 100);
 
   // 타이머 상태 문자열
   const char *status_str;
@@ -264,8 +252,8 @@ __attribute__((optimize("O0"))) void UART_SendStatusData(void)
 
   // 상태 정보 문자열 생성
   snprintf(status_buffer, sizeof(status_buffer),
-           "STATUS:BAT:%0.2f%%,TIMER:%02d:%02d,STATUS:%s,L1:%d,L2:%d,BAT_ADC:%d,BAT_VOLT:%0.2f\n",
-           battery_percent_float, timer_minutes, timer_seconds, status_str, l1_connected, l2_connected, Adc_State.VBat_ADC_Value, battery_voltage);
+           "STATUS:BAT:%dV,TIMER:%02d:%02d,STATUS:%s,L1:%d,L2:%d,BAT_ADC:%d,BAT_VOLT:%0.2f\n",
+           battery_voltage_int, timer_minutes, timer_seconds, status_str, l1_connected, l2_connected, Adc_State.VBat_ADC_Value, battery_voltage);
 
   HAL_UART_Transmit(&huart1, (uint8_t *)status_buffer, strlen(status_buffer), 1000);
 
