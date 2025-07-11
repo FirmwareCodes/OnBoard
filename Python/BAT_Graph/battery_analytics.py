@@ -13,7 +13,7 @@ class BatteryAnalytics:
         
     def analyze(self, data: pd.DataFrame) -> Dict:
         """
-        배터리 데이터 종합 분석
+        배터리 데이터 종합 분석 (OnBoard 로그 특화)
         
         Args:
             data: 배터리 데이터 (timestamp, battery 컬럼 필요)
@@ -26,21 +26,31 @@ class BatteryAnalytics:
         
         try:
             # OnBoard 모니터 로그인지 확인
-            is_onboard = 'source' in data.columns and data['source'].iloc[0] == 'onboard_monitor'
+            is_onboard = self.is_onboard_log(data)
             
-            results = {
-                'statistics': self.calculate_statistics(data),
-                'anomalies': self.detect_anomalies(data),
-                'trends': self.analyze_trends(data),
-                'patterns': self.find_patterns(data),
-                'health': self.assess_battery_health(data),
-                'predictions': self.predict_discharge_time(data),
-                'segments': self.segment_analysis(data)
-            }
-            
-            # OnBoard 특화 분석 추가
             if is_onboard:
-                results['onboard_analysis'] = self.analyze_onboard_specific(data)
+                # OnBoard 로그 전용 분석
+                results = {
+                    'statistics': self.calculate_onboard_statistics(data),
+                    'anomalies': self.detect_anomalies(data),
+                    'trends': self.analyze_trends(data),
+                    'patterns': self.find_onboard_patterns(data),
+                    'health': self.assess_onboard_battery_health(data),
+                    'predictions': self.predict_discharge_time(data),
+                    'segments': self.segment_analysis(data),
+                    'onboard_analysis': self.analyze_onboard_specific(data)
+                }
+            else:
+                # 일반 배터리 로그 분석
+                results = {
+                    'statistics': self.calculate_statistics(data),
+                    'anomalies': self.detect_anomalies(data),
+                    'trends': self.analyze_trends(data),
+                    'patterns': self.find_patterns(data),
+                    'health': self.assess_battery_health(data),
+                    'predictions': self.predict_discharge_time(data),
+                    'segments': self.segment_analysis(data)
+                }
             
             return results
             
@@ -48,8 +58,26 @@ class BatteryAnalytics:
             print(f"분석 오류: {e}")
             return {}
     
-    def calculate_statistics(self, data: pd.DataFrame) -> Dict:
-        """기본 통계 계산"""
+    def is_onboard_log(self, data: pd.DataFrame) -> bool:
+        """OnBoard 로그인지 확인"""
+        if data is None or len(data) == 0:
+            return False
+        
+        # OnBoard 로그의 특징적인 컬럼들 확인
+        required_columns = ['timestamp', 'battery', 'timer', 'status', 'L1', 'L2', 'memo']
+        has_onboard_columns = all(col in data.columns for col in required_columns)
+        
+        # 전압 범위 확인 (OnBoard는 20V~26V)
+        if 'battery' in data.columns:
+            avg_voltage = data['battery'].mean()
+            voltage_in_onboard_range = 18.0 <= avg_voltage <= 28.0
+        else:
+            voltage_in_onboard_range = False
+        
+        return has_onboard_columns and voltage_in_onboard_range
+    
+    def calculate_onboard_statistics(self, data: pd.DataFrame) -> Dict:
+        """OnBoard 로그 전용 통계 계산"""
         battery_data = data['battery']
         
         stats = {
@@ -60,17 +88,158 @@ class BatteryAnalytics:
             '최대 전압 (V)': f"{battery_data.max():.3f}",
             '전압 범위 (V)': f"{battery_data.max() - battery_data.min():.3f}",
             '변동계수 (%)': f"{(battery_data.std() / battery_data.mean()) * 100:.2f}",
-            '데이터 포인트 수': f"{len(data):,}",
+            '데이터 포인트 수': f"{len(data):,}개",
             '측정 기간': f"{self.get_duration_str(data)}",
             '평균 측정 간격': f"{self.get_average_interval(data)}"
         }
         
-        # 백분위수 추가
-        percentiles = [10, 25, 75, 90, 95, 99]
+        # OnBoard 특화 백분위수
+        percentiles = [25, 50, 75, 90, 95, 99]
+        for p in percentiles:
+            stats[f'{p}% 백분위수 (V)'] = f"{battery_data.quantile(p/100):.3f}"
+        
+        # OnBoard 상태 통계
+        if 'status' in data.columns:
+            standby_ratio = (data['status'] == 'STANDBY').sum() / len(data) * 100
+            stats['STANDBY 비율 (%)'] = f"{standby_ratio:.1f}"
+            
+            # 상태별 전압 평균
+            status_voltage = data.groupby('status')['battery'].mean()
+            for status, voltage in status_voltage.items():
+                stats[f'{status} 평균전압 (V)'] = f"{voltage:.3f}"
+        
+        # LED 상태 통계
+        if 'L1' in data.columns and 'L2' in data.columns:
+            normal_led_ratio = ((data['L1'] == 'X') & (data['L2'] == 'X')).sum() / len(data) * 100
+            stats['정상 LED 상태 (%)'] = f"{normal_led_ratio:.1f}"
+        
+        # 메모 통계
+        if 'memo' in data.columns:
+            try:
+                memo_numeric = pd.to_numeric(data['memo'], errors='coerce').dropna()
+                if len(memo_numeric) > 0:
+                    stats['메모 평균값'] = f"{memo_numeric.mean():.1f}"
+                    stats['메모 범위'] = f"{memo_numeric.min():.0f} ~ {memo_numeric.max():.0f}"
+                    stats['메모 표준편차'] = f"{memo_numeric.std():.1f}"
+            except:
+                pass
+        
+        return stats
+    
+    def calculate_statistics(self, data: pd.DataFrame) -> Dict:
+        """일반 배터리 로그 통계 계산"""
+        battery_data = data['battery']
+        
+        stats = {
+            '평균 전압 (V)': f"{battery_data.mean():.3f}",
+            '중앙값 전압 (V)': f"{battery_data.median():.3f}",
+            '표준편차 (V)': f"{battery_data.std():.3f}",
+            '최소 전압 (V)': f"{battery_data.min():.3f}",
+            '최대 전압 (V)': f"{battery_data.max():.3f}",
+            '전압 범위 (V)': f"{battery_data.max() - battery_data.min():.3f}",
+            '변동계수 (%)': f"{(battery_data.std() / battery_data.mean()) * 100:.2f}",
+            '데이터 포인트 수': f"{len(data):,}개",
+            '측정 기간': f"{self.get_duration_str(data)}",
+            '평균 측정 간격': f"{self.get_average_interval(data)}"
+        }
+        
+        # 백분위수
+        percentiles = [25, 50, 75, 90, 95, 99]
         for p in percentiles:
             stats[f'{p}% 백분위수 (V)'] = f"{battery_data.quantile(p/100):.3f}"
         
         return stats
+    
+    def find_onboard_patterns(self, data: pd.DataFrame) -> Dict:
+        """OnBoard 로그 특화 패턴 찾기"""
+        patterns = {}
+        
+        # 전압 패턴 분석
+        patterns['voltage'] = self.analyze_voltage_patterns(data)
+        
+        # 상태 패턴 분석
+        if 'status' in data.columns:
+            patterns['status'] = self.analyze_status_patterns(data)
+        
+        # LED 패턴 분석
+        if 'L1' in data.columns and 'L2' in data.columns:
+            patterns['led'] = self.analyze_led_patterns(data)
+        
+        # 메모 패턴 분석
+        if 'memo' in data.columns:
+            patterns['memo'] = self.analyze_memo_patterns(data)
+        
+        # 시간대별 패턴
+        patterns['hourly'] = self.analyze_hourly_patterns(data)
+        
+        return patterns
+    
+    def analyze_voltage_patterns(self, data: pd.DataFrame) -> Dict:
+        """전압 패턴 분석"""
+        battery_data = data['battery']
+        
+        # 충전/방전 구간 감지
+        voltage_diff = battery_data.diff()
+        
+        # 충전 구간 (0.01V 이상 증가)
+        charging_points = (voltage_diff > 0.01).sum()
+        
+        # 방전 구간 (0.01V 이상 감소)
+        discharging_points = (voltage_diff < -0.01).sum()
+        
+        # 안정 구간 (변화 미미)
+        stable_points = (voltage_diff.abs() <= 0.01).sum()
+        
+        return {
+            '충전 포인트': f"{charging_points}개",
+            '방전 포인트': f"{discharging_points}개",
+            '안정 포인트': f"{stable_points}개",
+            '충전 비율': f"{charging_points/len(data)*100:.1f}%",
+            '방전 비율': f"{discharging_points/len(data)*100:.1f}%",
+            '안정 비율': f"{stable_points/len(data)*100:.1f}%"
+        }
+    
+    def analyze_memo_patterns(self, data: pd.DataFrame) -> Dict:
+        """메모 패턴 분석"""
+        try:
+            memo_numeric = pd.to_numeric(data['memo'], errors='coerce').dropna()
+            
+            if len(memo_numeric) == 0:
+                return {'error': '숫자 메모 데이터 없음'}
+            
+            # 메모 값의 트렌드
+            memo_trend = self.calculate_memo_trend(memo_numeric)
+            
+            # 메모-전압 상관관계
+            memo_battery_corr = memo_numeric.corr(data.loc[memo_numeric.index, 'battery'])
+            
+            return {
+                '메모 범위': f"{memo_numeric.min():.0f} ~ {memo_numeric.max():.0f}",
+                '메모 평균': f"{memo_numeric.mean():.1f}",
+                '메모 변동성': f"{memo_numeric.std():.1f}",
+                '메모 트렌드': memo_trend,
+                '전압 상관관계': f"{memo_battery_corr:.3f}",
+                '메모 변화 빈도': f"{(memo_numeric.diff().abs() > 1).sum()}회"
+            }
+        except Exception as e:
+            return {'error': f'메모 분석 오류: {str(e)}'}
+    
+    def calculate_memo_trend(self, memo_series: pd.Series) -> str:
+        """메모 값의 트렌드 계산"""
+        if len(memo_series) < 2:
+            return '데이터 부족'
+        
+        # 선형 회귀로 트렌드 계산
+        x = np.arange(len(memo_series))
+        coeffs = np.polyfit(x, memo_series.values, 1)
+        slope = coeffs[0]
+        
+        if abs(slope) < 0.1:
+            return f'안정 (기울기: {slope:.3f})'
+        elif slope > 0:
+            return f'상승 (기울기: {slope:.3f})'
+        else:
+            return f'하락 (기울기: {slope:.3f})'
     
     def detect_anomalies(self, data: pd.DataFrame, method: str = 'iqr') -> pd.DataFrame:
         """이상치 감지"""
@@ -777,19 +946,734 @@ class BatteryAnalytics:
         return " ".join(parts) if parts else "1분 미만"
     
     def get_average_interval(self, data: pd.DataFrame) -> str:
-        """평균 측정 간격 반환"""
+        """평균 측정 간격 계산"""
         if len(data) < 2:
             return "계산 불가"
         
-        intervals = data['timestamp'].diff().dropna()
-        avg_interval = intervals.mean()
+        time_diffs = data['timestamp'].diff().dropna()
+        avg_interval = time_diffs.mean()
         
         if avg_interval.total_seconds() < 60:
             return f"{avg_interval.total_seconds():.1f}초"
         elif avg_interval.total_seconds() < 3600:
-            return f"{avg_interval.total_seconds() / 60:.1f}분"
+            return f"{avg_interval.total_seconds()/60:.1f}분"
         else:
-            return f"{avg_interval.total_seconds() / 3600:.1f}시간"
+            return f"{avg_interval.total_seconds()/3600:.1f}시간"
+
+    def comprehensive_battery_diagnostic(self, data: pd.DataFrame) -> Dict:
+        """종합 배터리 진단"""
+        battery_data = data['battery']
+        
+        # 기본 진단 항목
+        diagnostic = {
+            '배터리 타입 추정': self.estimate_battery_type(battery_data),
+            '전압 안정성': self.assess_voltage_stability(battery_data),
+            '내부 저항 추정': self.estimate_internal_resistance(data),
+            '셀 균형도': self.assess_cell_balance(battery_data),
+            '온도 영향 분석': self.analyze_temperature_effects(data),
+            '메모리 효과': self.detect_memory_effect(battery_data),
+            '자가방전율': self.calculate_self_discharge_rate(data),
+            '충전 효율성': self.assess_charging_efficiency(data)
+        }
+        
+        return diagnostic
+
+    def estimate_battery_type(self, battery_data: pd.Series) -> str:
+        """배터리 타입 추정"""
+        avg_voltage = battery_data.mean()
+        max_voltage = battery_data.max()
+        
+        if 20 <= avg_voltage <= 26:
+            return "리튬이온 6S (OnBoard 시스템)"
+        elif 3.0 <= avg_voltage <= 4.2:
+            return "리튬이온 1S"
+        elif 11 <= avg_voltage <= 13:
+            return "리튬이온 3S 또는 납산"
+        elif 22 <= avg_voltage <= 26:
+            return "리튬이온 6S"
+        else:
+            return f"커스텀 ({avg_voltage:.1f}V 평균)"
+
+    def assess_voltage_stability(self, battery_data: pd.Series) -> str:
+        """전압 안정성 평가"""
+        cv = (battery_data.std() / battery_data.mean()) * 100
+        
+        if cv < 1:
+            return f"매우 안정 (CV: {cv:.2f}%)"
+        elif cv < 3:
+            return f"안정 (CV: {cv:.2f}%)"
+        elif cv < 5:
+            return f"보통 (CV: {cv:.2f}%)"
+        else:
+            return f"불안정 (CV: {cv:.2f}%)"
+
+    def estimate_internal_resistance(self, data: pd.DataFrame) -> str:
+        """내부 저항 추정"""
+        # 전압 변화율로 내부 저항 추정
+        voltage_changes = data['battery'].diff().abs()
+        resistance_indicator = voltage_changes.mean()
+        
+        if resistance_indicator < 0.01:
+            return f"낮음 (~{resistance_indicator*100:.2f}mΩ 추정)"
+        elif resistance_indicator < 0.05:
+            return f"보통 (~{resistance_indicator*100:.2f}mΩ 추정)"
+        else:
+            return f"높음 (~{resistance_indicator*100:.2f}mΩ 추정)"
+
+    def assess_cell_balance(self, battery_data: pd.Series) -> str:
+        """셀 균형도 평가"""
+        voltage_range = battery_data.max() - battery_data.min()
+        
+        if voltage_range < 0.1:
+            return f"우수 (범위: {voltage_range:.3f}V)"
+        elif voltage_range < 0.3:
+            return f"양호 (범위: {voltage_range:.3f}V)"
+        else:
+            return f"주의 필요 (범위: {voltage_range:.3f}V)"
+
+    def analyze_temperature_effects(self, data: pd.DataFrame) -> str:
+        """온도 영향 분석"""
+        # 시간대별 전압 변화로 온도 영향 추정
+        if 'timestamp' in data.columns:
+            data['hour'] = data['timestamp'].dt.hour
+            hourly_avg = data.groupby('hour')['battery'].mean()
+            temp_variation = hourly_avg.std()
+            
+            if temp_variation < 0.05:
+                return f"온도 영향 미미 (변동: {temp_variation:.3f}V)"
+            elif temp_variation < 0.1:
+                return f"온도 영향 보통 (변동: {temp_variation:.3f}V)"
+            else:
+                return f"온도 영향 큼 (변동: {temp_variation:.3f}V)"
+        
+        return "온도 영향 분석 불가"
+
+    def detect_memory_effect(self, battery_data: pd.Series) -> str:
+        """메모리 효과 감지"""
+        # 전압 플래토 구간 감지
+        voltage_diff = battery_data.diff().abs()
+        plateau_points = (voltage_diff < 0.001).sum()
+        plateau_ratio = plateau_points / len(battery_data)
+        
+        if plateau_ratio > 0.3:
+            return f"메모리 효과 의심 ({plateau_ratio*100:.1f}% 플래토)"
+        else:
+            return f"메모리 효과 없음 ({plateau_ratio*100:.1f}% 플래토)"
+
+    def calculate_self_discharge_rate(self, data: pd.DataFrame) -> str:
+        """자가방전율 계산"""
+        # 장기간 비활성 구간에서의 전압 감소 분석
+        if len(data) < 100:
+            return "데이터 부족"
+        
+        # 안정된 구간 찾기
+        voltage_changes = data['battery'].diff().abs()
+        stable_periods = voltage_changes < voltage_changes.quantile(0.1)
+        
+        if stable_periods.sum() > 50:
+            stable_data = data[stable_periods]
+            if len(stable_data) > 1:
+                time_span = (stable_data['timestamp'].max() - stable_data['timestamp'].min()).total_seconds() / 3600
+                voltage_drop = stable_data['battery'].iloc[0] - stable_data['battery'].iloc[-1]
+                
+                if time_span > 0:
+                    discharge_rate = (voltage_drop / time_span) * 24  # V/day
+                    return f"{discharge_rate:.4f} V/일"
+        
+        return "측정 불가"
+
+    def assess_charging_efficiency(self, data: pd.DataFrame) -> str:
+        """충전 효율성 평가"""
+        # 충전 구간 감지
+        voltage_increases = data['battery'].diff() > 0.01
+        charging_periods = voltage_increases.sum()
+        
+        if charging_periods > 0:
+            efficiency_ratio = charging_periods / len(data)
+            if efficiency_ratio > 0.8:
+                return f"매우 높음 ({efficiency_ratio*100:.1f}%)"
+            elif efficiency_ratio > 0.6:
+                return f"높음 ({efficiency_ratio*100:.1f}%)"
+            elif efficiency_ratio > 0.4:
+                return f"보통 ({efficiency_ratio*100:.1f}%)"
+            else:
+                return f"낮음 ({efficiency_ratio*100:.1f}%)"
+        
+        return "충전 구간 없음"
+
+    def analyze_battery_performance(self, data: pd.DataFrame) -> Dict:
+        """배터리 성능 분석"""
+        battery_data = data['battery']
+        
+        performance = {
+            '응답성': self.assess_response_time(data),
+            '회복력': self.assess_recovery_capability(data),
+            '부하 처리 능력': self.assess_load_handling(data),
+            '전압 유지 능력': self.assess_voltage_maintenance(battery_data),
+            '피크 성능': self.analyze_peak_performance(battery_data),
+            '지속 성능': self.analyze_sustained_performance(data)
+        }
+        
+        return performance
+
+    def assess_response_time(self, data: pd.DataFrame) -> str:
+        """응답 시간 평가"""
+        voltage_changes = data['battery'].diff().abs()
+        response_time = voltage_changes.mean()
+        
+        if response_time > 0.1:
+            return f"빠름 ({response_time:.3f}V/측정)"
+        elif response_time > 0.05:
+            return f"보통 ({response_time:.3f}V/측정)"
+        else:
+            return f"느림 ({response_time:.3f}V/측정)"
+
+    def assess_recovery_capability(self, data: pd.DataFrame) -> str:
+        """회복 능력 평가"""
+        # 전압 하락 후 회복 패턴 분석
+        battery_data = data['battery']
+        drops = battery_data.diff() < -0.05
+        
+        if drops.sum() > 0:
+            recovery_periods = []
+            in_drop = False
+            drop_start = None
+            
+            for i, is_drop in enumerate(drops):
+                if is_drop and not in_drop:
+                    in_drop = True
+                    drop_start = i
+                elif not is_drop and in_drop:
+                    in_drop = False
+                    if drop_start is not None:
+                        recovery_periods.append(i - drop_start)
+            
+            if recovery_periods:
+                avg_recovery = np.mean(recovery_periods)
+                return f"회복 시간: {avg_recovery:.1f} 측정주기"
+            
+        return "회복 패턴 없음"
+
+    def assess_load_handling(self, data: pd.DataFrame) -> str:
+        """부하 처리 능력 평가"""
+        voltage_variance = data['battery'].var()
+        
+        if voltage_variance < 0.01:
+            return f"우수 (분산: {voltage_variance:.4f})"
+        elif voltage_variance < 0.05:
+            return f"양호 (분산: {voltage_variance:.4f})"
+        else:
+            return f"개선 필요 (분산: {voltage_variance:.4f})"
+
+    def assess_voltage_maintenance(self, battery_data: pd.Series) -> str:
+        """전압 유지 능력 평가"""
+        voltage_drop = battery_data.iloc[0] - battery_data.iloc[-1]
+        maintenance_ratio = 1 - abs(voltage_drop) / battery_data.iloc[0]
+        
+        if maintenance_ratio > 0.98:
+            return f"탁월 ({maintenance_ratio*100:.2f}%)"
+        elif maintenance_ratio > 0.95:
+            return f"우수 ({maintenance_ratio*100:.2f}%)"
+        elif maintenance_ratio > 0.90:
+            return f"양호 ({maintenance_ratio*100:.2f}%)"
+        else:
+            return f"주의 ({maintenance_ratio*100:.2f}%)"
+
+    def analyze_peak_performance(self, battery_data: pd.Series) -> str:
+        """피크 성능 분석"""
+        peak_voltage = battery_data.max()
+        peak_ratio = peak_voltage / battery_data.mean()
+        
+        return f"피크: {peak_voltage:.3f}V (평균 대비 {peak_ratio:.2f}배)"
+
+    def analyze_sustained_performance(self, data: pd.DataFrame) -> str:
+        """지속 성능 분석"""
+        # 90% 이상 성능 유지 시간 계산
+        target_voltage = data['battery'].max() * 0.9
+        sustained_periods = (data['battery'] >= target_voltage).sum()
+        sustained_ratio = sustained_periods / len(data)
+        
+        return f"90% 이상 성능 유지: {sustained_ratio*100:.1f}%"
+
+    def analyze_capacity_metrics(self, data: pd.DataFrame) -> Dict:
+        """용량 메트릭 분석"""
+        battery_data = data['battery']
+        
+        capacity = {
+            '명목 용량 추정': self.estimate_nominal_capacity(data),
+            '실제 용량': self.calculate_actual_capacity(data),
+            '용량 손실률': self.calculate_capacity_loss(data),
+            '용량 편차': self.calculate_capacity_deviation(battery_data),
+            '에너지 밀도': self.estimate_energy_density(data),
+            '방전 깊이': self.calculate_discharge_depth(battery_data)
+        }
+        
+        return capacity
+
+    def estimate_nominal_capacity(self, data: pd.DataFrame) -> str:
+        """명목 용량 추정"""
+        avg_voltage = data['battery'].mean()
+        
+        # 전압 기반 용량 추정 (리튬이온 기준)
+        if 20 <= avg_voltage <= 26:
+            estimated_capacity = "5000-10000mAh (6S 시스템)"
+        elif 11 <= avg_voltage <= 13:
+            estimated_capacity = "2000-5000mAh (3S 시스템)"
+        elif 3.0 <= avg_voltage <= 4.2:
+            estimated_capacity = "1000-3000mAh (1S 시스템)"
+        else:
+            estimated_capacity = "추정 불가"
+        
+        return estimated_capacity
+
+    def calculate_actual_capacity(self, data: pd.DataFrame) -> str:
+        """실제 용량 계산"""
+        # 방전 곡선 기반 용량 계산
+        voltage_drop = data['battery'].iloc[0] - data['battery'].iloc[-1]
+        time_span = (data['timestamp'].max() - data['timestamp'].min()).total_seconds() / 3600
+        
+        if time_span > 0 and voltage_drop > 0:
+            discharge_rate = voltage_drop / time_span
+            return f"방전률 기반: {discharge_rate:.3f}V/h"
+        
+        return "계산 불가"
+
+    def calculate_capacity_loss(self, data: pd.DataFrame) -> str:
+        """용량 손실률 계산"""
+        # 첫 번째와 마지막 구간 비교
+        first_quarter = data.iloc[:len(data)//4]
+        last_quarter = data.iloc[-len(data)//4:]
+        
+        first_avg = first_quarter['battery'].mean()
+        last_avg = last_quarter['battery'].mean()
+        
+        capacity_loss = (first_avg - last_avg) / first_avg * 100
+        
+        return f"{capacity_loss:.2f}%"
+
+    def calculate_capacity_deviation(self, battery_data: pd.Series) -> str:
+        """용량 편차 계산"""
+        deviation = battery_data.std() / battery_data.mean() * 100
+        return f"{deviation:.2f}%"
+
+    def estimate_energy_density(self, data: pd.DataFrame) -> str:
+        """에너지 밀도 추정"""
+        avg_voltage = data['battery'].mean()
+        
+        # 일반적인 리튬이온 배터리 기준
+        if avg_voltage > 20:
+            energy_density = "150-250 Wh/kg"
+        elif avg_voltage > 10:
+            energy_density = "200-300 Wh/kg"
+        else:
+            energy_density = "250-350 Wh/kg"
+        
+        return energy_density
+
+    def calculate_discharge_depth(self, battery_data: pd.Series) -> str:
+        """방전 깊이 계산"""
+        min_voltage = battery_data.min()
+        max_voltage = battery_data.max()
+        
+        if max_voltage > min_voltage:
+            discharge_depth = (max_voltage - min_voltage) / max_voltage * 100
+            return f"{discharge_depth:.2f}%"
+        
+        return "0%"
+
+    def analyze_thermal_behavior(self, data: pd.DataFrame) -> Dict:
+        """열적 거동 분석"""
+        thermal = {
+            '열적 안정성': self.assess_thermal_stability(data),
+            '온도 계수': self.calculate_temperature_coefficient(data),
+            '열 방출 특성': self.analyze_heat_dissipation(data),
+            '온도 민감도': self.assess_temperature_sensitivity(data)
+        }
+        
+        return thermal
+
+    def assess_thermal_stability(self, data: pd.DataFrame) -> str:
+        """열적 안정성 평가"""
+        # 시간대별 전압 변화로 열적 안정성 평가
+        if len(data) > 24:
+            voltage_hourly_std = data.groupby(data['timestamp'].dt.hour)['battery'].std().mean()
+            
+            if voltage_hourly_std < 0.01:
+                return "매우 안정"
+            elif voltage_hourly_std < 0.05:
+                return "안정"
+            else:
+                return "불안정"
+        
+        return "데이터 부족"
+
+    def calculate_temperature_coefficient(self, data: pd.DataFrame) -> str:
+        """온도 계수 계산"""
+        # 시간 기반 온도 계수 추정
+        if len(data) > 100:
+            hourly_changes = data.groupby(data['timestamp'].dt.hour)['battery'].mean().diff().mean()
+            temp_coefficient = hourly_changes * 1000  # mV/°C 추정
+            
+            return f"{temp_coefficient:.2f} mV/°C (추정)"
+        
+        return "계산 불가"
+
+    def analyze_heat_dissipation(self, data: pd.DataFrame) -> str:
+        """열 방출 특성 분석"""
+        voltage_changes = data['battery'].diff().abs()
+        heat_indicator = voltage_changes.mean() * 1000  # mV 단위
+        
+        if heat_indicator < 1:
+            return f"낮음 ({heat_indicator:.2f}mV 변화)"
+        elif heat_indicator < 5:
+            return f"보통 ({heat_indicator:.2f}mV 변화)"
+        else:
+            return f"높음 ({heat_indicator:.2f}mV 변화)"
+
+    def assess_temperature_sensitivity(self, data: pd.DataFrame) -> str:
+        """온도 민감도 평가"""
+        daily_variance = data.groupby(data['timestamp'].dt.date)['battery'].var().mean()
+        
+        if daily_variance < 0.001:
+            return "낮음"
+        elif daily_variance < 0.01:
+            return "보통"
+        else:
+            return "높음"
+
+    def analyze_charging_cycles(self, data: pd.DataFrame) -> Dict:
+        """충전 사이클 분석"""
+        cycles = {
+            '충전 사이클 수': self.count_charging_cycles(data),
+            '평균 충전 시간': self.calculate_average_charge_time(data),
+            '충전 효율성': self.calculate_charge_efficiency(data),
+            '사이클 수명 추정': self.estimate_cycle_life(data)
+        }
+        
+        return cycles
+
+    def count_charging_cycles(self, data: pd.DataFrame) -> str:
+        """충전 사이클 수 계산"""
+        # 전압 증가 구간을 충전으로 간주
+        voltage_increases = data['battery'].diff() > 0.1
+        cycles = 0
+        in_charge = False
+        
+        for increase in voltage_increases:
+            if increase and not in_charge:
+                cycles += 1
+                in_charge = True
+            elif not increase:
+                in_charge = False
+        
+        return f"{cycles}회"
+
+    def calculate_average_charge_time(self, data: pd.DataFrame) -> str:
+        """평균 충전 시간 계산"""
+        charge_periods = []
+        voltage_increases = data['battery'].diff() > 0.05
+        
+        current_period = 0
+        for increase in voltage_increases:
+            if increase:
+                current_period += 1
+            else:
+                if current_period > 0:
+                    charge_periods.append(current_period)
+                current_period = 0
+        
+        if charge_periods:
+            avg_period = np.mean(charge_periods)
+            return f"{avg_period:.1f} 측정주기"
+        
+        return "충전 구간 없음"
+
+    def calculate_charge_efficiency(self, data: pd.DataFrame) -> str:
+        """충전 효율성 계산"""
+        voltage_increases = (data['battery'].diff() > 0).sum()
+        total_periods = len(data) - 1
+        
+        if total_periods > 0:
+            efficiency = voltage_increases / total_periods * 100
+            return f"{efficiency:.1f}%"
+        
+        return "0%"
+
+    def estimate_cycle_life(self, data: pd.DataFrame) -> str:
+        """사이클 수명 추정"""
+        voltage_degradation = (data['battery'].iloc[0] - data['battery'].iloc[-1]) / data['battery'].iloc[0]
+        
+        if voltage_degradation > 0:
+            # 단순 추정: 20% 용량 손실까지의 사이클 수
+            estimated_cycles = int(0.2 / voltage_degradation)
+            return f"약 {estimated_cycles:,}회 (추정)"
+        
+        return "수명 저하 미감지"
+
+    def analyze_battery_degradation(self, data: pd.DataFrame) -> Dict:
+        """배터리 열화 분석"""
+        degradation = {
+            '열화 정도': self.assess_degradation_level(data),
+            '열화 속도': self.calculate_degradation_rate(data),
+            '잔여 수명': self.estimate_remaining_life(data),
+            '열화 원인': self.identify_degradation_causes(data)
+        }
+        
+        return degradation
+
+    def assess_degradation_level(self, data: pd.DataFrame) -> str:
+        """열화 정도 평가"""
+        voltage_loss = (data['battery'].iloc[0] - data['battery'].iloc[-1]) / data['battery'].iloc[0] * 100
+        
+        if voltage_loss < 1:
+            return f"미미 ({voltage_loss:.2f}%)"
+        elif voltage_loss < 5:
+            return f"경미 ({voltage_loss:.2f}%)"
+        elif voltage_loss < 10:
+            return f"보통 ({voltage_loss:.2f}%)"
+        else:
+            return f"심각 ({voltage_loss:.2f}%)"
+
+    def calculate_degradation_rate(self, data: pd.DataFrame) -> str:
+        """열화 속도 계산"""
+        time_span = (data['timestamp'].max() - data['timestamp'].min()).total_seconds() / (24 * 3600)  # 일
+        voltage_loss = data['battery'].iloc[0] - data['battery'].iloc[-1]
+        
+        if time_span > 0:
+            degradation_rate = voltage_loss / time_span
+            return f"{degradation_rate:.4f} V/일"
+        
+        return "계산 불가"
+
+    def estimate_remaining_life(self, data: pd.DataFrame) -> str:
+        """잔여 수명 추정"""
+        current_voltage = data['battery'].iloc[-1]
+        voltage_loss_rate = (data['battery'].iloc[0] - current_voltage) / len(data)
+        
+        # 20% 추가 손실까지의 시간 계산
+        target_loss = current_voltage * 0.2
+        
+        if voltage_loss_rate > 0:
+            remaining_measurements = target_loss / voltage_loss_rate
+            return f"약 {remaining_measurements:.0f} 측정주기"
+        
+        return "수명 저하 미감지"
+
+    def identify_degradation_causes(self, data: pd.DataFrame) -> str:
+        """열화 원인 식별"""
+        causes = []
+        
+        # 과방전 확인
+        if data['battery'].min() < data['battery'].mean() * 0.7:
+            causes.append("과방전")
+        
+        # 과충전 확인
+        if data['battery'].max() > data['battery'].mean() * 1.3:
+            causes.append("과충전")
+        
+        # 고온 사용 추정
+        voltage_variance = data['battery'].var()
+        if voltage_variance > 0.1:
+            causes.append("온도 스트레스")
+        
+        # 빈번한 사이클링
+        voltage_changes = (data['battery'].diff().abs() > 0.1).sum()
+        if voltage_changes > len(data) * 0.1:
+            causes.append("빈번한 사이클링")
+        
+        if causes:
+            return ", ".join(causes)
+        else:
+            return "특별한 원인 없음"
+
+    def assess_battery_risks(self, data: pd.DataFrame) -> Dict:
+        """배터리 위험 평가"""
+        risks = {
+            '안전성 등급': self.assess_safety_level(data),
+            '과방전 위험': self.assess_over_discharge_risk(data),
+            '과충전 위험': self.assess_over_charge_risk(data),
+            '열폭주 위험': self.assess_thermal_runaway_risk(data),
+            '단락 위험': self.assess_short_circuit_risk(data)
+        }
+        
+        return risks
+
+    def assess_safety_level(self, data: pd.DataFrame) -> str:
+        """안전성 등급 평가"""
+        battery_data = data['battery']
+        
+        # 전압 안정성, 변동성 등을 종합 평가
+        stability = battery_data.std() / battery_data.mean()
+        voltage_range = (battery_data.max() - battery_data.min()) / battery_data.mean()
+        
+        safety_score = 100 - (stability * 100 + voltage_range * 50)
+        
+        if safety_score > 90:
+            return f"A급 (안전) - {safety_score:.1f}점"
+        elif safety_score > 80:
+            return f"B급 (양호) - {safety_score:.1f}점"
+        elif safety_score > 70:
+            return f"C급 (주의) - {safety_score:.1f}점"
+        else:
+            return f"D급 (위험) - {safety_score:.1f}점"
+
+    def assess_over_discharge_risk(self, data: pd.DataFrame) -> str:
+        """과방전 위험 평가"""
+        min_voltage = data['battery'].min()
+        mean_voltage = data['battery'].mean()
+        
+        risk_ratio = min_voltage / mean_voltage
+        
+        if risk_ratio > 0.9:
+            return "낮음"
+        elif risk_ratio > 0.8:
+            return "보통"
+        else:
+            return f"높음 (최저: {min_voltage:.2f}V)"
+
+    def assess_over_charge_risk(self, data: pd.DataFrame) -> str:
+        """과충전 위험 평가"""
+        max_voltage = data['battery'].max()
+        mean_voltage = data['battery'].mean()
+        
+        risk_ratio = max_voltage / mean_voltage
+        
+        if risk_ratio < 1.1:
+            return "낮음"
+        elif risk_ratio < 1.2:
+            return "보통"
+        else:
+            return f"높음 (최고: {max_voltage:.2f}V)"
+
+    def assess_thermal_runaway_risk(self, data: pd.DataFrame) -> str:
+        """열폭주 위험 평가"""
+        voltage_spikes = (data['battery'].diff().abs() > 0.5).sum()
+        
+        if voltage_spikes == 0:
+            return "낮음"
+        elif voltage_spikes < 5:
+            return f"보통 ({voltage_spikes}회 스파이크)"
+        else:
+            return f"높음 ({voltage_spikes}회 스파이크)"
+
+    def assess_short_circuit_risk(self, data: pd.DataFrame) -> str:
+        """단락 위험 평가"""
+        sudden_drops = (data['battery'].diff() < -1.0).sum()
+        
+        if sudden_drops == 0:
+            return "낮음"
+        elif sudden_drops < 3:
+            return f"보통 ({sudden_drops}회 급강하)"
+        else:
+            return f"높음 ({sudden_drops}회 급강하)"
+
+    def calculate_efficiency_metrics(self, data: pd.DataFrame) -> Dict:
+        """효율성 메트릭 계산"""
+        efficiency = {
+            '에너지 효율성': self.calculate_energy_efficiency(data),
+            '전력 효율성': self.calculate_power_efficiency(data),
+            '충방전 효율성': self.calculate_charge_discharge_efficiency(data),
+            '시스템 효율성': self.calculate_system_efficiency(data)
+        }
+        
+        return efficiency
+
+    def calculate_energy_efficiency(self, data: pd.DataFrame) -> str:
+        """에너지 효율성 계산"""
+        voltage_stability = 1 - (data['battery'].std() / data['battery'].mean())
+        efficiency_percentage = voltage_stability * 100
+        
+        return f"{efficiency_percentage:.1f}%"
+
+    def calculate_power_efficiency(self, data: pd.DataFrame) -> str:
+        """전력 효율성 계산"""
+        # 전압 변화의 부드러움으로 효율성 평가
+        voltage_smoothness = 1 - (data['battery'].diff().abs().mean() / data['battery'].mean())
+        efficiency_percentage = voltage_smoothness * 100
+        
+        return f"{efficiency_percentage:.1f}%"
+
+    def calculate_charge_discharge_efficiency(self, data: pd.DataFrame) -> str:
+        """충방전 효율성 계산"""
+        # 충전과 방전 구간의 균형성 평가
+        increases = (data['battery'].diff() > 0).sum()
+        decreases = (data['battery'].diff() < 0).sum()
+        
+        if increases + decreases > 0:
+            balance = 1 - abs(increases - decreases) / (increases + decreases)
+            efficiency_percentage = balance * 100
+            return f"{efficiency_percentage:.1f}%"
+        
+        return "계산 불가"
+
+    def calculate_system_efficiency(self, data: pd.DataFrame) -> str:
+        """시스템 효율성 계산"""
+        # 전체적인 시스템 효율성 종합 평가
+        voltage_efficiency = 1 - (data['battery'].std() / data['battery'].mean())
+        stability_efficiency = 1 - ((data['battery'].max() - data['battery'].min()) / data['battery'].mean())
+        
+        system_efficiency = (voltage_efficiency + stability_efficiency) / 2 * 100
+        
+        return f"{system_efficiency:.1f}%"
+
+    def assess_onboard_battery_health(self, data: pd.DataFrame) -> Dict:
+        """OnBoard 배터리 건강도 평가"""
+        battery_data = data['battery']
+        
+        # OnBoard 전압 건강도 (20V~26V 기준)
+        voltage_health = self.assess_onboard_voltage_health(battery_data)
+        
+        # 변동성 기반 건강도
+        stability_health = self.assess_stability_health(battery_data)
+        
+        # OnBoard 상태 기반 건강도
+        status_health = self.assess_onboard_status_health(data)
+        
+        # 종합 건강도 (가중 평균)
+        overall_health = (voltage_health * 0.5 + stability_health * 0.3 + status_health * 0.2)
+        
+        health_grade = self.get_health_grade(overall_health)
+        
+        return {
+            '종합 건강도': f"{overall_health:.1f}/100",
+            '건강도 등급': health_grade,
+            '전압 건강도': f"{voltage_health:.1f}/100",
+            '안정성 건강도': f"{stability_health:.1f}/100",
+            '시스템 건강도': f"{status_health:.1f}/100",
+            '권장사항': self.get_onboard_health_recommendations(overall_health)
+        }
+    
+    def assess_onboard_status_health(self, data: pd.DataFrame) -> float:
+        """OnBoard 상태 기반 건강도"""
+        if 'status' not in data.columns:
+            return 80.0  # 기본값
+        
+        # STANDBY 비율이 높을수록 안정적
+        standby_ratio = (data['status'] == 'STANDBY').sum() / len(data)
+        
+        # LED 상태 정상 비율
+        led_health = 80.0  # 기본값
+        if 'L1' in data.columns and 'L2' in data.columns:
+            normal_led_ratio = ((data['L1'] == 'X') & (data['L2'] == 'X')).sum() / len(data)
+            led_health = normal_led_ratio * 100
+        
+        # 종합 상태 건강도
+        status_health = (standby_ratio * 0.7 + led_health/100 * 0.3) * 100
+        
+        return min(100.0, status_health)
+    
+    def get_onboard_health_recommendations(self, health_score: float) -> str:
+        """OnBoard 건강도 기반 권장사항"""
+        if health_score >= 90:
+            return "OnBoard 시스템이 우수한 상태입니다. 현재 모니터링 수준을 유지하세요."
+        elif health_score >= 80:
+            return "OnBoard 시스템이 양호한 상태입니다. 주간 점검을 권장합니다."
+        elif health_score >= 70:
+            return "OnBoard 시스템 상태가 보통입니다. 3일 내 상세 점검이 필요합니다."
+        elif health_score >= 60:
+            return "OnBoard 시스템에 주의가 필요합니다. 24시간 내 점검을 권장합니다."
+        else:
+            return "OnBoard 시스템이 위험 상태입니다. 즉시 전문가 점검 및 배터리 교체를 검토하세요."
 
 # 사용 예시
 if __name__ == '__main__':

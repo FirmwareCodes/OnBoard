@@ -623,12 +623,12 @@ void StartDisplayTask(void *argument)
       current_status.timer_status = TIMER_STATUS_WARNING;
     }
 
-    if (Battery_Get_Voltage(&Battery_Monitor) < 17.50f && current_status.warning_status == 0)
+    if (Battery_Get_Voltage(&Battery_Monitor) < 17.90f && current_status.warning_status == 0)
     {
       current_status.timer_status = TIMER_STATUS_WARNING;
       current_status.warning_status = 1;
     }
-    else if (Battery_Get_Voltage(&Battery_Monitor) > 19.5f && current_status.warning_status != 0)
+    else if (Battery_Get_Voltage(&Battery_Monitor) > 19.8f && current_status.warning_status != 0)
     {
       current_status.timer_status = TIMER_STATUS_STANDBY;
       current_status.warning_status = 0;
