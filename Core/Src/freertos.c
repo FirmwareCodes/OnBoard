@@ -139,10 +139,10 @@ Button_t Button_State = {
     .is_start_to_cooling = false,                 // 쿨링 시작 여부
     .cooling_second = 0,                          // 쿨링 초 카운트
     .last_click_time = 0,                         // 마지막 버튼 클릭 시간
-    .click_count = 0,                              // 더블 클릭 카운트
-    .double_click_detected = false,                // 더블 클릭 감지 플래그
-    .show_battery_voltage = false,                 // 배터리 표시 토글 플래그
-    .pending_single_click = false,                 // 대기 중인 단일클릭 플래그
+    .click_count = 0,                             // 더블 클릭 카운트
+    .double_click_detected = false,               // 더블 클릭 감지 플래그
+    .show_battery_voltage = false,                // 배터리 표시 토글 플래그
+    .pending_single_click = false,                // 대기 중인 단일클릭 플래그
     .single_click_time = 0,                       // 단일클릭 시작 시간
     .single_click_duration = 0,                   // 단일클릭 지속 시간
 };
@@ -521,16 +521,15 @@ void StartAdcTask(void *argument)
     }
 
     // 배터리 전압 기반 PWM 차단 로직
-    if(!Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) < 17.1f)
+    if (!Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) < 17.1f)
     {
       Adc_State.Cut_Off_PWM = true;
     }
-    else if(Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) > 18.6f)
+    else if (Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) > 18.6f)
     {
       Adc_State.Cut_Off_PWM = false;
     }
 
-    
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4,
                           Button_State.is_Start_Timer ? Adc_State.Cut_Off_PWM ? DUTY_0 : Adc_State.Current_PWM_Duty : DUTY_0);
 
@@ -565,26 +564,26 @@ void StartDisplayTask(void *argument)
       .timer_minutes = 0,
       .timer_seconds = 0,
       .timer_status = TIMER_STATUS_STANDBY,
+      .warning_status = 0,
       .l1_connected = LED_DISCONNECTED,
       .l2_connected = LED_DISCONNECTED,
       .cooling_seconds = 0,
       .progress_update_counter = 0,
       .blink_counter = 0,
-      .force_full_update = 1,    // 첫 번째는 전체 업데이트
+      .force_full_update = 1,     // 첫 번째는 전체 업데이트
       .timer_indicator_blink = 0, // 타이머 표시기 초기값
-      .init_animation_active = 0,  // 애니메이션 비활성 상태로 시작
+      .init_animation_active = 0, // 애니메이션 비활성 상태로 시작
       .animation_voltage = 19.0f,
-      .animation_counter = 0
-  };
+      .animation_counter = 0};
 
   // 시스템 시작 후 첫 번째 배터리 전압 측정 대기
   osDelay(500);
-  
+
   // 첫 번째 전압 측정 및 초기 애니메이션 시작
   float initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
   Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
   initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
-  
+
   // 초기 애니메이션 시작
   UI_StartInitAnimation(&current_status, initial_voltage);
 
@@ -600,27 +599,43 @@ void StartDisplayTask(void *argument)
 
     // 배터리 모니터 업데이트 (보정 없이 실측값만 사용)
     Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
-    
+
     // 업데이트된 배터리 전압 사용
     battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
 
     // 타이머 상태 결정
-    Timer_Status_t timer_status = TIMER_STATUS_STANDBY;
-    if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+    if (current_status.warning_status == 0)
     {
-      timer_status = TIMER_STATUS_SETTING;
+      if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+      {
+        current_status.timer_status = TIMER_STATUS_SETTING;
+      }
+      else if (Button_State.is_start_to_cooling)
+      {
+        current_status.timer_status = TIMER_STATUS_COOLING;
+      }
+      else if (Button_State.is_Start_Timer)
+      {
+        current_status.timer_status = TIMER_STATUS_RUNNING;
+      }
+    }else if (current_status.warning_status != 0)
+    {
+      current_status.timer_status = TIMER_STATUS_WARNING;
     }
-    else if (Button_State.is_start_to_cooling)
+
+    if (Battery_Get_Voltage(&Battery_Monitor) < 17.50f && current_status.warning_status == 0)
     {
-      timer_status = TIMER_STATUS_COOLING;
+      current_status.timer_status = TIMER_STATUS_WARNING;
+      current_status.warning_status = 1;
     }
-    else if (Button_State.is_Start_Timer)
+    else if (Battery_Get_Voltage(&Battery_Monitor) > 19.5f && current_status.warning_status != 0)
     {
-      timer_status = TIMER_STATUS_RUNNING;
+      current_status.timer_status = TIMER_STATUS_STANDBY;
+      current_status.warning_status = 0;
     }
 
     // 타이머 실행 표시기 제어 (0.5초마다 토글)
-    if (timer_status == TIMER_STATUS_RUNNING)
+    if (current_status.timer_status == TIMER_STATUS_RUNNING)
     {
       // 타이머 실행 중: 0.5초마다 토글
       current_status.timer_indicator_blink = (current_status.blink_counter / 10) % 2;
@@ -685,7 +700,6 @@ void StartDisplayTask(void *argument)
     current_status.battery_voltage = battery_voltage; // 배터리 전압 업데이트
     current_status.timer_minutes = timer_minutes;
     current_status.timer_seconds = timer_seconds;
-    current_status.timer_status = timer_status;
     current_status.l1_connected = l1_connected;
     current_status.l2_connected = l2_connected;
     current_status.cooling_seconds = (uint8_t)Button_State.cooling_second;
@@ -766,22 +780,22 @@ void StartButtonTask(void *argument)
       {
         uint32_t current_time = Button_State.Button_Current_Time;
         uint32_t time_since_last_click = current_time - Button_State.last_click_time;
-        
+
         // 더블 클릭 간격: 500ms 이내 && 이전 클릭이 있었을 때
-        if (Button_State.last_click_time > 0 && 
+        if (Button_State.last_click_time > 0 &&
             time_since_last_click <= (500 / portTICK_PERIOD_MS))
         {
           // 더블 클릭 감지됨
           Button_State.double_click_detected = true;
           Button_State.pending_single_click = false; // 대기 중인 단일클릭 취소
           Button_State.click_count = 0;
-          
+
           // 더블 클릭 시 배터리 표시 토글 (STANDBY 상태에서만)
           if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
           {
             Button_State.show_battery_voltage = !Button_State.show_battery_voltage;
           }
-          
+
           // 더블클릭 처리 완료 후 즉시 플래그 리셋 및 last_click_time 초기화
           Button_State.double_click_detected = false;
           Button_State.last_click_time = 0; // 다음 클릭을 새로운 시작으로 처리
@@ -808,12 +822,12 @@ void StartButtonTask(void *argument)
     if (Button_State.pending_single_click)
     {
       uint32_t time_since_single_click = Button_State.Button_Current_Time - Button_State.single_click_time;
-      
+
       // 500ms 대기 후 단일클릭 처리
       if (time_since_single_click >= (500 / portTICK_PERIOD_MS))
       {
         Button_State.pending_single_click = false;
-        
+
         // 단일클릭 처리 (더블클릭이 감지된 경우 이미 pending_single_click이 false로 설정됨)
         // 버튼 상태에 따른 동작 처리
         switch (Button_State.Current_Button_State)

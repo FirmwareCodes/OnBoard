@@ -18,6 +18,7 @@ extern const unsigned char standby_icon_19x19[];
 extern const unsigned char running_icon_19x19[];
 extern const unsigned char setting_icon_19x19[];
 extern const unsigned char cooling_icon_19x19[];
+extern const unsigned char warning_icon_19x19[];
 
 extern const unsigned char percent_12x12[];
 extern const unsigned char exclamation_12x12[];
@@ -625,6 +626,9 @@ void UI_DrawTimerStatus(Timer_Status_t status)
     case TIMER_STATUS_COOLING:
         UI_DrawIcon19x19(icon_x, icon_y, cooling_icon_19x19, COLOR_WHITE);
         break;
+    case TIMER_STATUS_WARNING:
+        UI_DrawIcon19x19(icon_x, icon_y, warning_icon_19x19, COLOR_WHITE);
+        break;
     }
 }
 
@@ -873,7 +877,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     // 배터리 부족 경고
     if (status->battery_voltage < WARNING_BATTERY_VOLTAGE)
     {
-        uint8_t interval = abs(status->battery_voltage - 16) + (status->battery_voltage < 17.0f ? 1 : 0);
+        uint8_t interval = abs((int)status->battery_voltage - 16) + (status->battery_voltage < 16.0f ? 1 : 0);
         uint16_t update_interval = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS * interval / UI_UPDATE_INTERVAL_MS));
 
         // 느낌표 아이콘 그리기

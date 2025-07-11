@@ -97,7 +97,8 @@ typedef enum
     TIMER_STATUS_STANDBY = 0, // 대기
     TIMER_STATUS_RUNNING = 1, // 실행 중
     TIMER_STATUS_SETTING = 2, // 설정 중
-    TIMER_STATUS_COOLING = 3  // 쿨링 중
+    TIMER_STATUS_COOLING = 3, // 쿨링 중
+    TIMER_STATUS_WARNING = 4  // 경고
 } Timer_Status_t;
 
 // LED 연결 상태 열거형
@@ -115,6 +116,8 @@ typedef struct
     uint8_t timer_minutes;         // 설정된 타이머 분
     uint8_t timer_seconds;         // 설정된 타이머 초
     Timer_Status_t timer_status;   // 타이머 상태
+    uint8_t warning_status;        // 경고 상태
+
     LED_Connection_t l1_connected; // L1 연결 상태
     LED_Connection_t l2_connected; // L2 연결 상태
     uint8_t cooling_seconds;       // 쿨링 남은 시간 (초)
@@ -136,6 +139,7 @@ extern const unsigned char standby_icon_19x19[]; // 대기 상태
 extern const unsigned char running_icon_19x19[]; // 실행 상태
 extern const unsigned char setting_icon_19x19[]; // 설정 상태
 extern const unsigned char cooling_icon_19x19[]; // 쿨링 상태
+extern const unsigned char warning_icon_19x19[]; // 경고 상태
 
 // 퍼센트 아이콘 비트맵 (12x16)
 extern const unsigned char percent_12x16[];

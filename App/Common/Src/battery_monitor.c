@@ -91,9 +91,12 @@ float Battery_ADC_To_Voltage(uint16_t adc_value)
 {
     // 실제 측정값 기준 선형 변환
     const float ADC_MAX = 3720.0f;    // 25.2V에 해당하는 ADC 값
-    const float ADC_MIN = 2740.0f;    // 18.6V에 해당하는 ADC 값
+    // const float ADC_MIN = 2740.0f;    // 18.6V에 해당하는 ADC 값
+    const float ADC_MIN = 2498.0f;    // 18.6V에 해당하는 ADC 값
+
     const float VOLTAGE_MAX = 25.2f;  // 최대 전압 (V)
-    const float VOLTAGE_MIN = 18.6f;  // 최소 전압 (V)
+    // const float VOLTAGE_MIN = 18.6f;  // 최소 전압 (V)
+    const float VOLTAGE_MIN = 17.0f;  // 최소 전압 (V)
     
     // ADC 값이 측정 범위를 벗어나는 경우 처리
     // if (adc_value >= ADC_MAX)
@@ -109,6 +112,9 @@ float Battery_ADC_To_Voltage(uint16_t adc_value)
     // Voltage = VOLTAGE_MIN + (adc_value - ADC_MIN) * (VOLTAGE_MAX - VOLTAGE_MIN) / (ADC_MAX - ADC_MIN)
     float voltage = VOLTAGE_MIN + ((float)(adc_value - ADC_MIN) * (VOLTAGE_MAX - VOLTAGE_MIN)) / (ADC_MAX - ADC_MIN);
     
+    // 전압 보정
+    voltage -= 0.04f;
+
     return voltage;
 }
 
