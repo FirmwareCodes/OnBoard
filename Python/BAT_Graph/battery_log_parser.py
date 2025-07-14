@@ -768,15 +768,7 @@ class BatteryLogParser:
         # 1. 전압 범위 체크
         min_voltage = voltages.min()
         max_voltage = voltages.max()
-        
-        if min_voltage < config['cutoff_voltage']:
-            health_score -= 20
-            issues.append(f"위험: 최소 전압이 안전 범위 이하 ({min_voltage:.2f}V < {config['cutoff_voltage']}V)")
-        
-        if max_voltage > config['max_voltage'] * 1.05:  # 5% 여유
-            health_score -= 15
-            issues.append(f"주의: 최대 전압이 권장 범위 초과 ({max_voltage:.2f}V > {config['max_voltage']}V)")
-        
+      
         # 2. 전압 안정성 체크
         voltage_std = np.std(voltages)
         expected_std = 0.1  # 정상 범위

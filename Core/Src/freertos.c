@@ -153,6 +153,24 @@ UART_State_t UART_State = {
     .command_ready = 0,
     .monitoring_enabled = 0};
 
+// UI 상태 초기화
+UI_Status_t current_status = {
+    .battery_voltage = 0.0f,
+    .timer_minutes = 0,
+    .timer_seconds = 0,
+    .timer_status = TIMER_STATUS_STANDBY,
+    .warning_status = 0,
+    .l1_connected = LED_DISCONNECTED,
+    .l2_connected = LED_DISCONNECTED,
+    .cooling_seconds = 0,
+    .progress_update_counter = 0,
+    .blink_counter = 0,
+    .force_full_update = 1,     // 첫 번째는 전체 업데이트
+    .timer_indicator_blink = 0, // 타이머 표시기 초기값
+    .init_animation_active = 0, // 애니메이션 비활성 상태로 시작
+    .animation_voltage = 19.0f,
+    .animation_counter = 0};
+
 // 새로운 배터리 모니터링 시스템
 Battery_Monitor_t Battery_Monitor = {0};
 
@@ -468,9 +486,9 @@ void StartAdcTask(void *argument)
         Adc_State.VBat_Filtered = filtered_value;
       }
     }
-
     // 최종 필터링된 값을 VBat_ADC_Value에 저장
     Adc_State.VBat_ADC_Value = Adc_State.VBat_Filtered;
+
 
     // 간단한 LED 상태 판단 LOW(1500~2050) MIDDLE(2050~2500) HIGH(2500~4095) 0630 기준
     // LOW 1.5V(1900) , MIDDLE 1.77V(2200) , HIGH 2.4V(3000)
@@ -520,18 +538,11 @@ void StartAdcTask(void *argument)
       last_button_state = Button_State.is_Start_Timer;
     }
 
-    // 배터리 전압 기반 PWM 차단 로직
-    if (!Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) < 17.1f)
-    {
-      Adc_State.Cut_Off_PWM = true;
-    }
-    else if (Adc_State.Cut_Off_PWM && Battery_ADC_To_Voltage(Adc_State.VBat_ADC_Value) > 18.6f)
-    {
-      Adc_State.Cut_Off_PWM = false;
-    }
 
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4,
-                          Button_State.is_Start_Timer ? Adc_State.Cut_Off_PWM ? DUTY_0 : Adc_State.Current_PWM_Duty : DUTY_0);
+    // 타이머 실행 시 차단 상태에서는 0% 출력, 아니면 현재 PWM 듀티 출력
+    uint16_t pwm_duty = Button_State.is_Start_Timer ? (Adc_State.Cut_Off_PWM ? DUTY_0 : Adc_State.Current_PWM_Duty) : DUTY_0;
+
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_duty);
 
     vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
   }
@@ -557,24 +568,6 @@ void StartDisplayTask(void *argument)
 
   // 초기 화면 안정화를 위한 딜레이
   osDelay(200);
-
-  // UI 상태 초기화
-  UI_Status_t current_status = {
-      .battery_voltage = 0.0f,
-      .timer_minutes = 0,
-      .timer_seconds = 0,
-      .timer_status = TIMER_STATUS_STANDBY,
-      .warning_status = 0,
-      .l1_connected = LED_DISCONNECTED,
-      .l2_connected = LED_DISCONNECTED,
-      .cooling_seconds = 0,
-      .progress_update_counter = 0,
-      .blink_counter = 0,
-      .force_full_update = 1,     // 첫 번째는 전체 업데이트
-      .timer_indicator_blink = 0, // 타이머 표시기 초기값
-      .init_animation_active = 0, // 애니메이션 비활성 상태로 시작
-      .animation_voltage = 19.0f,
-      .animation_counter = 0};
 
   // 시스템 시작 후 첫 번째 배터리 전압 측정 대기
   osDelay(500);
@@ -618,20 +611,32 @@ void StartDisplayTask(void *argument)
       {
         current_status.timer_status = TIMER_STATUS_RUNNING;
       }
-    }else if (current_status.warning_status != 0)
+    }
+    else if (current_status.warning_status != 0)
     {
       current_status.timer_status = TIMER_STATUS_WARNING;
     }
 
-    if (Battery_Get_Voltage(&Battery_Monitor) < 17.90f && current_status.warning_status == 0)
+    if (Battery_Get_Voltage(&Battery_Monitor) < 18.50f && current_status.warning_status == 0)
     {
       current_status.timer_status = TIMER_STATUS_WARNING;
       current_status.warning_status = 1;
     }
-    else if (Battery_Get_Voltage(&Battery_Monitor) > 19.8f && current_status.warning_status != 0)
+    else if (Battery_Get_Voltage(&Battery_Monitor) > 20.00f && current_status.warning_status != 0)
     {
       current_status.timer_status = TIMER_STATUS_STANDBY;
       current_status.warning_status = 0;
+    }
+
+    
+    // 배터리 전압 기반 PWM 차단 로직, 배터리 전압 경고시 PWM 차단
+    if (current_status.warning_status == 1)
+    {
+      Adc_State.Cut_Off_PWM = true;
+    }
+    else if (current_status.warning_status == 0)
+    {
+      Adc_State.Cut_Off_PWM = false;
     }
 
     // 타이머 실행 표시기 제어 (0.5초마다 토글)

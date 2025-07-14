@@ -74,7 +74,7 @@ typedef struct
   uint8_t ten_second_buffer_full;                          // 10초 버퍼 가득참 여부
   uint32_t ten_second_start_time;                          // 10초 측정 시작 시간
   
-  uint16_t filtered_voltage;                               // 필터링된 전압 (ADC)
+  uint16_t filtered_voltage;                               // 일정 횟수 측정값을 평균 필터링된 전압 (ADC)
   uint16_t compensated_voltage;                            // 부하 보정된 전압 (ADC)
   uint16_t display_voltage;                                // 표시용 실측 전압 (ADC, 보정 적용 안함)
   uint16_t ten_second_average;                             // 10초 평균값

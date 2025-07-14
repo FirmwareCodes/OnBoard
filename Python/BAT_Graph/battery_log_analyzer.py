@@ -262,7 +262,7 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
 
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle('고급 배터리 로그 분석기 v2.0 - 진단 & 성능 평가')
+        self.setWindowTitle(' 배터리 로그 분석기 v2.0 - 진단 & 성능 평가')
         self.setGeometry(100, 100, 1600, 1000)
         
         # 메인 위젯 및 레이아웃
@@ -289,7 +289,7 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         splitter.setSizes([350, 1250])
         
         # 상태바
-        self.statusBar().showMessage('파일을 선택하여 고급 분석을 시작하세요.')
+        self.statusBar().showMessage('파일을 선택하여  분석을 시작하세요.')
         
     def create_toolbar(self, layout):
         """툴바 생성"""
@@ -2345,7 +2345,7 @@ OnBoard 기준:
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>고급 배터리 로그 분석 보고서</title>
+    <title>배터리 로그 분석 보고서</title>
     <style>
         body {{ 
             font-family: 'Malgun Gothic', Arial, sans-serif; 
@@ -2465,7 +2465,7 @@ OnBoard 기준:
 </head>
 <body>
     <div class="header">
-        <h1>🔋 고급 배터리 로그 분석 보고서</h1>
+        <h1>🔋 배터리 로그 분석 보고서</h1>
         <p style="font-size: 1.2em; margin: 10px 0;"><strong>생성일시:</strong> {datetime.now().strftime('%Y년 %m월 %d일 %H시 %M분')}</p>
         <p style="font-size: 1.1em;"><strong>분석 파일:</strong> {os.path.basename(self.file_path)}</p>
         <p><strong>분석 프로그램:</strong> OnBoard 배터리 로그 분석기 v2.0</p>
@@ -2674,7 +2674,7 @@ OnBoard 기준:
     </div>
     
     <footer style="margin-top: 50px; padding: 30px; border-top: 2px solid #667eea; text-align: center; color: #6c757d; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
-        <p style="font-size: 1.1em;"><strong>이 보고서는 OnBoard 고급 배터리 로그 분석기 v2.0에서 자동 생성되었습니다.</strong></p>
+        <p style="font-size: 1.1em;"><strong>이 보고서는 OnBoard  배터리 로그 분석기 v2.0에서 자동 생성되었습니다.</strong></p>
         <p>생성 시간: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
         <p style="font-size: 0.9em; color: #868e96;">⚡ STM32L412 OnBoard 시스템 전용 분석 도구</p>
     </footer>

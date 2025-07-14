@@ -12,3 +12,4 @@
 /Python/OLED_Monitor/venv/*
 *.log
 *.html
+Python\OLED_Monitor\Core\venv\*
