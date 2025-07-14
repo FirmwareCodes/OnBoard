@@ -113,6 +113,7 @@ typedef enum
 typedef struct
 {
     float battery_voltage;         // 배터리 전압 (V)
+    float battery_percentage;      // 배터리 퍼센트
     uint8_t timer_minutes;         // 설정된 타이머 분
     uint8_t timer_seconds;         // 설정된 타이머 초
     Timer_Status_t timer_status;   // 타이머 상태

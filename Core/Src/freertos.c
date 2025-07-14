@@ -703,6 +703,7 @@ void StartDisplayTask(void *argument)
 
     // UI 상태 구조체 업데이트
     current_status.battery_voltage = battery_voltage; // 배터리 전압 업데이트
+    current_status.battery_percentage = Battery_Get_Percentage_Float(&Battery_Monitor);
     current_status.timer_minutes = timer_minutes;
     current_status.timer_seconds = timer_seconds;
     current_status.l1_connected = l1_connected;

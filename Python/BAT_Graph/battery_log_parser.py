@@ -1116,11 +1116,15 @@ class BatteryLogParser:
                 report.append("🔧 내부 저항 분석")
                 report.append("-" * 30)
                 
+                # 계산 방법 표시
+                if 'calculation_method' in resistance:
+                    report.append(f"계산 방법: {resistance['calculation_method']}")
+                
                 if resistance['load_type'] == 'constant_power':
                     report.append(f"분석 방법: 일정 전력 부하")
                     report.append(f"평균 전류: {resistance['avg_current']:.3f}A")
                     report.append(f"전압 강하: {resistance['voltage_drop']:.3f}V")
-                    report.append(f"전류 증가: {resistance['current_increase']:.3f}A")
+                    report.append(f"전류 변화: {resistance['current_increase']:.3f}A")
                     report.append(f"내부 저항 (방법1): {resistance['internal_resistance_method1']:.4f}Ω")
                     
                     if resistance['dynamic_resistance'] is not None:
@@ -1138,6 +1142,12 @@ class BatteryLogParser:
                     report.append(f"셀당 저항: {rating['resistance_per_cell_mohm']:.1f}mΩ")
                     report.append(f"저항 등급: {rating['grade']}")
                     report.append(f"평가: {rating['description']}")
+                
+                # 경고 메시지 표시
+                if 'warning' in resistance:
+                    report.append("")
+                    report.append(f"⚠️  주의사항: {resistance['warning']}")
+                    report.append("")
                 
                 # 전력 손실 계산
                 if 'avg_current' in resistance:
@@ -1160,7 +1170,7 @@ class BatteryLogParser:
         
         # 건강도 평가
         health = analysis['health_assessment']
-        report.append("💚 배터리 건강도")
+        report.append("🟢 배터리 건강도")
         report.append("-" * 30)
         report.append(f"건강도 점수: {health['health_score']:.0f}/100")
         report.append(f"건강도 등급: {health['health_grade']}")
@@ -1713,12 +1723,17 @@ class BatteryLogParser:
 
     def _analyze_internal_resistance(self, df, load_watts, load_amps, config):
         """
-        배터리 내부 저항 분석
+        배터리 내부 저항 분석 (수정됨: 물리적으로 올바른 계산)
         
         방법:
         1. 전압 변화율과 전류 변화율을 분석
         2. 옴의 법칙 (R = ΔV / ΔI) 적용
         3. 무부하 전압과 부하 전압 차이 분석
+        
+        수정사항:
+        - 전압 강하를 절댓값으로 처리
+        - 저항값이 항상 양수가 되도록 보정
+        - 물리적 의미에 맞는 계산 적용
         """
         resistance_analysis = {}
         
@@ -1727,47 +1742,48 @@ class BatteryLogParser:
         if len(voltages) < 2:
             return {'message': '내부 저항 계산을 위한 데이터가 부족합니다'}
         
-        # 전압 변화량 계산
-        voltage_change = voltages[0] - voltages[-1]  # 초기 - 최종 전압
+        # 전압 변화량 계산 (절댓값 사용 - 전압 강하량)
+        voltage_drop = abs(voltages[0] - voltages[-1])  # 전압 강하의 절댓값
         
         if load_watts is not None:
             # 일정 전력 부하의 경우
             initial_current = load_watts / voltages[0]
             final_current = load_watts / voltages[-1]
-            current_change = final_current - initial_current
+            current_change = abs(final_current - initial_current)  # 전류 변화의 절댓값
             
             # 평균 전류로 내부 저항 추정
             avg_current = np.mean(load_watts / voltages)
             
-            # 방법 1: 전압 강하 / 평균 전류
+            # 방법 1: 전압 강하 / 평균 전류 (수정됨)
             if avg_current > 0:
-                resistance_method1 = voltage_change / avg_current
+                resistance_method1 = voltage_drop / avg_current
             else:
                 resistance_method1 = 0
             
-            # 방법 2: 전압 변화 / 전류 변화 (동적 저항)
-            if abs(current_change) > 0.001:  # 전류 변화가 충분히 큰 경우
-                dynamic_resistance = -voltage_change / current_change  # 음수 부호: 전류 증가 시 전압 감소
+            # 방법 2: 전압 변화 / 전류 변화 (동적 저항) (수정됨)
+            if current_change > 0.001:  # 전류 변화가 충분히 큰 경우
+                dynamic_resistance = voltage_drop / current_change
             else:
                 dynamic_resistance = None
             
             resistance_analysis = {
                 'load_type': 'constant_power',
                 'avg_current': avg_current,
-                'voltage_drop': voltage_change,
-                'current_increase': current_change,
+                'voltage_drop': voltage_drop,  # 수정: 절댓값 사용
+                'current_increase': current_change,  # 수정: 절댓값 사용
                 'internal_resistance_method1': resistance_method1,
                 'dynamic_resistance': dynamic_resistance,
-                'resistance_unit': 'ohms'
+                'resistance_unit': 'ohms',
+                'calculation_method': '전압강하/평균전류 (일정전력부하)'
             }
             
         elif load_amps is not None:
             # 일정 전류 부하의 경우
             constant_current = load_amps
             
-            # 옴의 법칙: R = ΔV / I
+            # 옴의 법칙: R = ΔV / I (수정됨: 전압 강하 절댓값 사용)
             if constant_current > 0:
-                internal_resistance = voltage_change / constant_current
+                internal_resistance = voltage_drop / constant_current
             else:
                 internal_resistance = 0
             
@@ -1777,10 +1793,11 @@ class BatteryLogParser:
             resistance_analysis = {
                 'load_type': 'constant_current',
                 'constant_current': constant_current,
-                'voltage_drop': voltage_change,
+                'voltage_drop': voltage_drop,  # 수정: 절댓값 사용
                 'internal_resistance': internal_resistance,
                 'voltage_efficiency': voltage_efficiency,
-                'resistance_unit': 'ohms'
+                'resistance_unit': 'ohms',
+                'calculation_method': '전압강하/일정전류 (일정전류부하)'
             }
         
         # 내부 저항 등급 평가
@@ -1791,10 +1808,17 @@ class BatteryLogParser:
         else:
             resistance_value = None
         
-        if resistance_value is not None:
+        if resistance_value is not None and resistance_value > 0:
             resistance_analysis['resistance_rating'] = self._evaluate_resistance_rating(
                 resistance_value, config['cells'])
             resistance_analysis['resistance_per_cell'] = resistance_value / config['cells']
+            
+            # 물리적 타당성 검증 추가
+            resistance_per_cell_mohm = (resistance_value * 1000) / config['cells']
+            if resistance_per_cell_mohm > 1000:  # 1Ω/cell 이상
+                resistance_analysis['warning'] = f"비정상적으로 높은 저항값 ({resistance_per_cell_mohm:.1f}mΩ/cell). 계산 결과를 재검토하세요."
+            elif resistance_per_cell_mohm < 1:  # 1mΩ/cell 미만
+                resistance_analysis['warning'] = f"비정상적으로 낮은 저항값 ({resistance_per_cell_mohm:.1f}mΩ/cell). 측정 조건을 확인하세요."
         
         return resistance_analysis
     

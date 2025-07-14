@@ -72,6 +72,10 @@ class OLEDMonitor:
         # 모니터링 및 성능 관련
         self.auto_request_enabled = True
         self.integrated_mode = True  # 통합 모드 기본 활성화
+        
+        # 모니터링 모드 설정 (새로 추가)
+        self.monitoring_mode = "integrated"  # "integrated", "screen_only", "status_only"
+        
         self.performance_stats = {
             'total_captures': 0,
             'successful_captures': 0,
@@ -360,6 +364,22 @@ class OLEDMonitor:
         # 갱신 모드 표시
         self.update_mode_label = ttk.Label(conn_frame, text="수동 모드", foreground="orange")
         self.update_mode_label.grid(row=1, column=3, padx=5, pady=2)
+        
+        # 세 번째 행: 모니터링 모드 선택
+        ttk.Label(conn_frame, text="모니터링 모드:").grid(row=2, column=0, padx=5, pady=2, sticky=tk.W)
+        self.monitoring_mode_var = tk.StringVar(value="integrated")
+        monitoring_combo = ttk.Combobox(conn_frame, textvariable=self.monitoring_mode_var, width=15)
+        monitoring_combo['values'] = [
+            'integrated',    # 통합 모드 (화면+상태)
+            'screen_only',   # 화면만
+            'status_only'    # 상태만
+        ]
+        monitoring_combo.grid(row=2, column=1, padx=5, pady=2)
+        monitoring_combo.bind('<<ComboboxSelected>>', self.on_monitoring_mode_changed)
+        
+        # 모니터링 모드 설명 표시
+        self.monitoring_mode_label = ttk.Label(conn_frame, text="통합 모드 (화면+상태)", foreground="blue")
+        self.monitoring_mode_label.grid(row=2, column=2, columnspan=2, padx=5, pady=2, sticky=tk.W)
         
     def create_display_frame(self, parent):
         """화면 표시 프레임"""
@@ -763,7 +783,7 @@ class OLEDMonitor:
             self.stop_monitoring()
             
     def start_monitoring(self):
-        """모니터링 시작 - 간소화된 안정적 버전"""
+        """모니터링 시작 - 모드별 분기 처리"""
         if not self.is_connected:
             messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
             return
@@ -785,6 +805,25 @@ class OLEDMonitor:
             # 시리얼 버퍼 클리어
             self.clear_serial_buffers()
             
+            # 모니터링 모드에 따른 분기 처리
+            if self.monitoring_mode == "integrated":
+                self.start_integrated_monitoring()
+            elif self.monitoring_mode == "screen_only":
+                self.start_screen_only_monitoring()
+            elif self.monitoring_mode == "status_only":
+                self.start_status_only_monitoring()
+            else:
+                # 기본값은 통합 모드
+                self.start_integrated_monitoring()
+                
+        except Exception as e:
+            self.log_message(f"❌ 모니터링 시작 오류: {str(e)}")
+            self.is_monitoring = False
+            self.monitor_btn.config(text="모니터링 시작")
+    
+    def start_integrated_monitoring(self):
+        """통합 모니터링 시작 (화면+상태)"""
+        try:
             # 펌웨어 설정
             try:
                 # 새로운 펌웨어에서는 화면 요청 시 상태도 함께 전송 (통합 응답 모드)
@@ -809,26 +848,96 @@ class OLEDMonitor:
             except Exception as setup_error:
                 self.log_message(f"⚠️ 펌웨어 설정 오류: {str(setup_error)} - 계속 진행")
             
-            # 화면 캡처 루프만 시작 (상태는 화면 응답에 포함됨)
+            # 화면 캡처 루프 시작 (상태는 화면 응답에 포함됨)
             if self.capture_thread is None or not self.capture_thread.is_alive():
                 self.capture_thread = threading.Thread(target=self.integrated_capture_loop, daemon=True)
                 self.capture_thread.start()
-            
-            # 상태 루프는 비활성화 (통합 응답으로 대체)
-            # if self.status_thread is None or not self.status_thread.is_alive():
-            #     self.status_thread = threading.Thread(target=self.status_loop_simple, daemon=True)
-            #     self.status_thread.start()
                 
             mode_text = "통합 모드 (화면+상태)" if self.auto_request_enabled else "수동 모드"
             interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
             
-            self.log_message(f"🚀 모니터링 시작 - {mode_text}{interval_text}")
-            self.write_event_log("START", f"모니터링 시작 - {mode_text}{interval_text}")
+            self.log_message(f"🚀 통합 모니터링 시작 - {mode_text}{interval_text}")
+            self.write_event_log("START", f"통합 모니터링 시작 - {mode_text}{interval_text}")
             
         except Exception as e:
-            self.log_message(f"❌ 모니터링 시작 오류: {str(e)}")
-            self.is_monitoring = False
-            self.monitor_btn.config(text="모니터링 시작")
+            self.log_message(f"❌ 통합 모니터링 시작 오류: {str(e)}")
+            raise
+    
+    def start_screen_only_monitoring(self):
+        """화면만 모니터링 시작"""
+        try:
+            # 펌웨어 설정 (화면만)
+            try:
+                command = f"SET_UPDATE_MODE:SCREEN_ONLY,{self.update_interval_ms}\n"
+                self.send_command(command)
+                
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 화면 전용 모드 설정 완료")
+                else:
+                    self.log_message("⚠️ 펌웨어 화면 전용 모드 설정 응답 없음")
+                
+                # 모니터링 활성화
+                self.send_command("START_MONITOR")
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 모니터링 활성화")
+                    
+            except Exception as setup_error:
+                self.log_message(f"⚠️ 펌웨어 설정 오류: {str(setup_error)} - 계속 진행")
+            
+            # 화면 전용 캡처 루프 시작
+            if self.capture_thread is None or not self.capture_thread.is_alive():
+                self.capture_thread = threading.Thread(target=self.screen_only_capture_loop, daemon=True)
+                self.capture_thread.start()
+                
+            mode_text = "화면 전용 모드" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            
+            self.log_message(f"🚀 화면 전용 모니터링 시작 - {mode_text}{interval_text}")
+            self.write_event_log("START", f"화면 전용 모니터링 시작 - {mode_text}{interval_text}")
+            
+        except Exception as e:
+            self.log_message(f"❌ 화면 전용 모니터링 시작 오류: {str(e)}")
+            raise
+    
+    def start_status_only_monitoring(self):
+        """상태만 모니터링 시작"""
+        try:
+            # 펌웨어 설정 (상태만)
+            try:
+                command = f"SET_UPDATE_MODE:STATUS_ONLY,{self.update_interval_ms}\n"
+                self.send_command(command)
+                
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 상태 전용 모드 설정 완료")
+                else:
+                    self.log_message("⚠️ 펌웨어 상태 전용 모드 설정 응답 없음")
+                
+                # 모니터링 활성화
+                self.send_command("START_MONITOR")
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 모니터링 활성화")
+                    
+            except Exception as setup_error:
+                self.log_message(f"⚠️ 펌웨어 설정 오류: {str(setup_error)} - 계속 진행")
+            
+            # 상태 전용 모니터링 루프 시작
+            if self.status_thread is None or not self.status_thread.is_alive():
+                self.status_thread = threading.Thread(target=self.status_only_monitoring_loop, daemon=True)
+                self.status_thread.start()
+                
+            mode_text = "상태 전용 모드" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            
+            self.log_message(f"🚀 상태 전용 모니터링 시작 - {mode_text}{interval_text}")
+            self.write_event_log("START", f"상태 전용 모니터링 시작 - {mode_text}{interval_text}")
+            
+        except Exception as e:
+            self.log_message(f"❌ 상태 전용 모니터링 시작 오류: {str(e)}")
+            raise
     
     def stop_monitoring(self):
         """모니터링 중지 - 간소화된 안전한 종료"""
@@ -1016,6 +1125,256 @@ class OLEDMonitor:
         if not self.is_monitoring:
             self.log_message("🛑 사용자가 모니터링을 중지함")
         # 자동으로 stop_monitoring을 호출하지 않음
+    
+    def screen_only_capture_loop(self):
+        """화면 전용 캡처 루프 - 화면만 모니터링"""
+        consecutive_failures = 0
+        max_failures = 10
+        requests_per_minute = 0
+        last_request_time = 0
+        last_minute_reset = time.time()
+        
+        # 성능 통계
+        loop_start_time = time.time()
+        
+        self.log_message("🔄 화면 전용 캡처 루프 시작")
+        
+        while self.is_monitoring:
+            try:
+                current_time = time.time()
+                
+                # 분당 요청 수 계산 및 리셋
+                if current_time - last_minute_reset >= 60:
+                    requests_per_minute = 0
+                    last_minute_reset = current_time
+                
+                # 연결 상태 확인
+                if not self.check_connection():
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_failures:
+                        self.log_message(f"⚠️ 연결 끊어짐 감지 - 복구 시도 중... ({consecutive_failures}/{max_failures})")
+                        try:
+                            self.clear_serial_buffers()
+                            time.sleep(1.0)
+                            # 테스트 화면으로 대체
+                            test_screen = self.generate_test_screen()
+                            if test_screen is not None:
+                                self.root.after(0, lambda img=test_screen: self.update_display(img))
+                            consecutive_failures = max_failures // 2
+                        except Exception as recovery_error:
+                            self.log_message(f"복구 시도 오류: {str(recovery_error)}")
+                        time.sleep(2.0)
+                        continue
+                    time.sleep(0.5)
+                    continue
+                
+                # 자동 요청 모드 처리 (화면만)
+                if self.auto_request_enabled:
+                    interval_seconds = self.update_interval_ms / 1000.0
+                    min_interval = 0.05  # 50ms 최소 간격
+                    if interval_seconds < min_interval:
+                        interval_seconds = min_interval
+                    
+                    if current_time - last_request_time >= interval_seconds:
+                        try:
+                            # 화면만 요청
+                            success = self.simple_screen_request()
+                            last_request_time = current_time
+                            requests_per_minute += 1
+                            
+                            if success:
+                                consecutive_failures = 0
+                            else:
+                                consecutive_failures += 1
+                                
+                        except Exception as request_error:
+                            error_msg = str(request_error)
+                            if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
+                                self.log_message(f"화면 요청 오류: {error_msg}")
+                            consecutive_failures += 1
+                    
+                    # 적절한 대기 시간
+                    sleep_time = min(0.01, interval_seconds / 10)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                else:
+                    # 수동 모드에서는 긴 대기
+                    time.sleep(0.1)
+                    consecutive_failures = 0
+                
+                # 연속 실패 처리
+                if consecutive_failures >= max_failures:
+                    self.log_message(f"⚠️ 연속 {max_failures}회 실패 - 복구 시도")
+                    try:
+                        self.clear_serial_buffers()
+                        time.sleep(0.5)
+                        if self.check_connection():
+                            self.log_message("✅ 연결 복구 완료")
+                            consecutive_failures = 0
+                        else:
+                            # 테스트 화면으로 대체
+                            test_screen = self.generate_test_screen()
+                            if test_screen is not None:
+                                self.root.after(0, lambda img=test_screen: self.update_display(img))
+                            consecutive_failures = max_failures // 2
+                    except Exception as recovery_error:
+                        self.log_message(f"복구 시도 오류: {str(recovery_error)}")
+                        consecutive_failures = max_failures // 2
+                    time.sleep(2.0)
+                    
+            except Exception as e:
+                error_msg = str(e)
+                self.log_message(f"❌ 화면 전용 캡처 루프 오류: {error_msg}")
+                consecutive_failures += 1
+                time.sleep(0.5)
+        
+        # 종료 처리
+        total_time = time.time() - loop_start_time
+        self.log_message(f"🔄 화면 전용 캡처 루프 종료 - 실행시간: {total_time:.1f}초")
+    
+    def status_only_monitoring_loop(self):
+        """상태 전용 모니터링 루프 - GET_STATUS 명령을 주기적으로 전송"""
+        consecutive_failures = 0
+        max_failures = 10
+        requests_per_minute = 0
+        last_request_time = 0
+        last_minute_reset = time.time()
+        
+        # 성능 통계
+        loop_start_time = time.time()
+        successful_requests = 0
+        total_requests = 0
+        
+        self.log_message("🔄 상태 전용 모니터링 루프 시작 - GET_STATUS 명령 주기적 전송")
+        
+        while self.is_monitoring:
+            try:
+                current_time = time.time()
+                
+                # 분당 요청 수 계산 및 리셋
+                if current_time - last_minute_reset >= 60:
+                    requests_per_minute = 0
+                    last_minute_reset = current_time
+                
+                # 연결 상태 확인
+                if not self.check_connection():
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_failures:
+                        self.log_message(f"⚠️ 연결 끊어짐 감지 - 복구 시도 중... ({consecutive_failures}/{max_failures})")
+                        try:
+                            self.clear_serial_buffers()
+                            time.sleep(1.0)
+                            # 테스트 상태로 대체
+                            test_status = self.generate_test_status_data()
+                            self.root.after(0, lambda data=test_status: self.update_status_display(data))
+                            consecutive_failures = max_failures // 2
+                        except Exception as recovery_error:
+                            self.log_message(f"복구 시도 오류: {str(recovery_error)}")
+                        time.sleep(2.0)
+                        continue
+                    time.sleep(0.5)
+                    continue
+                
+                # 자동 요청 모드 처리 (상태만)
+                if self.auto_request_enabled:
+                    interval_seconds = self.update_interval_ms / 1000.0
+                    min_interval = 0.1  # 100ms 최소 간격 (상태 요청은 화면보다 느려도 됨)
+                    if interval_seconds < min_interval:
+                        interval_seconds = min_interval
+                    
+                    if current_time - last_request_time >= interval_seconds:
+                        # 시리얼 락 획득 (짧은 타임아웃)
+                        if self.serial_lock.acquire(timeout=0.5):
+                            try:
+                                total_requests += 1
+                                
+                                # 최소 간격 체크
+                                if current_time - self.last_status_request_time >= self.request_min_interval:
+                                    self.last_status_request_time = current_time
+                                    
+                                    # GET_STATUS 명령 전송
+                                    response = self.send_command_and_wait("GET_STATUS", 1000)
+                                    last_request_time = current_time
+                                    requests_per_minute += 1
+                                    
+                                    if response:
+                                        status_data = self.parse_firmware_status_data(response)
+                                        if status_data:
+                                            # GUI 업데이트 (비동기)
+                                            self.root.after(0, lambda data=status_data: self.update_status_display(data))
+                                            
+                                            # 상태 로그에 기록
+                                            try:
+                                                self.write_status_log(status_data)
+                                            except:
+                                                pass
+                                            
+                                            successful_requests += 1
+                                            consecutive_failures = 0
+                                        else:
+                                            # 파싱 실패시 테스트 데이터
+                                            try:
+                                                test_status = self.generate_test_status_data()
+                                                self.root.after(0, lambda data=test_status: self.update_status_display(data))
+                                            except:
+                                                pass
+                                            consecutive_failures += 1
+                                    else:
+                                        consecutive_failures += 1
+                                
+                            except Exception as status_error:
+                                consecutive_failures += 1
+                            finally:
+                                # 락 해제
+                                self.serial_lock.release()
+                        else:
+                            # 락 획득 실패시 그냥 넘어감
+                            pass
+                    
+                    # 적절한 대기 시간
+                    sleep_time = min(0.1, interval_seconds / 5)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                else:
+                    # 수동 모드에서는 긴 대기
+                    time.sleep(0.5)
+                    consecutive_failures = 0
+                
+                # 연속 실패 처리
+                if consecutive_failures >= max_failures:
+                    self.log_message(f"⚠️ 연속 {max_failures}회 실패 - 복구 시도")
+                    try:
+                        self.clear_serial_buffers()
+                        time.sleep(0.5)
+                        if self.check_connection():
+                            self.log_message("✅ 연결 복구 완료")
+                            consecutive_failures = 0
+                        else:
+                            # 테스트 상태로 대체
+                            test_status = self.generate_test_status_data()
+                            self.root.after(0, lambda data=test_status: self.update_status_display(data))
+                            consecutive_failures = max_failures // 2
+                    except Exception as recovery_error:
+                        self.log_message(f"복구 시도 오류: {str(recovery_error)}")
+                        consecutive_failures = max_failures // 2
+                    time.sleep(2.0)
+                    
+            except Exception as e:
+                error_msg = str(e)
+                self.log_message(f"❌ 상태 전용 모니터링 루프 오류: {error_msg}")
+                consecutive_failures += 1
+                time.sleep(0.5)
+        
+        # 종료 처리
+        total_time = time.time() - loop_start_time
+        self.log_message(f"🔄 상태 전용 모니터링 루프 종료 - 실행시간: {total_time:.1f}초")
+        
+        # 최종 통계
+        if total_requests > 0:
+            success_rate = (successful_requests / total_requests) * 100
+            self.log_message(f"📊 최종 상태 요청 통계: 성공률 {success_rate:.1f}% ({successful_requests}/{total_requests})")
+        else:
+            self.log_message("�� 상태 요청 통계: 요청 없음")
     
     def status_loop_simple(self):
         """간소화된 상태 모니터링 루프 - 단순하고 안정적"""
@@ -2380,9 +2739,9 @@ class OLEDMonitor:
         try:
             # 기본 상태 정보 (항상 반환되도록)
             status_info = {
-                'timestamp': datetime.now().strftime('%H:%M:%S'), 
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'source': 'firmware',
-                'battery': 0,
+                'battery': 18.6,
                 'timer': '00:00',
                 'status': 'UNKNOWN',
                 'l1_connected': False,
@@ -2405,9 +2764,9 @@ class OLEDMonitor:
             status_info['raw_string'] = data_str
             
             # 데이터 길이 검증 (과도한 데이터 방지)
-            if len(data_str) > 1100:
+            if len(data_str) > 500:
                 self.write_event_log("WARNING", f"데이터 크기 제한: {len(data_str)} chars")
-                data_str = data_str[:1100]
+                data_str = data_str[:500]
             
             # STATUS: 형식 확인
             if not data_str.startswith('STATUS:'):
@@ -2591,6 +2950,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
         if not self.serial_lock.acquire(timeout=2.0):
             self.log_message("⚠️ 상태 새로고침 - 시리얼 락 획득 실패")
             return
+            
             
         try:
             # 최소 간격 체크
@@ -2901,11 +3261,16 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
 1. 시리얼 포트와 보드레이트를 설정합니다 (기본: 921600)
 2. '연결' 버튼을 클릭하여 디바이스에 연결합니다
 
-📺 모니터링:
-1. '모니터링 시작'을 클릭하여 실시간 모니터링을 시작합니다
-2. 화면 확대 비율을 조절할 수 있습니다 (1x~8x)
-3. '화면 캡처'로 현재 화면과 상태를 함께 저장할 수 있습니다
-4. 자동 저장 기능으로 주기적 저장이 가능합니다
+📺 모니터링 모드:
+• 통합 모드: 화면과 상태를 동시에 모니터링 (기본)
+• 화면만: OLED 화면만 모니터링하여 성능 최적화
+• 상태만: 배터리/타이머 상태만 모니터링 (GET_STATUS 명령 주기적 전송)
+
+🎛️ 모니터링 제어:
+1. 모니터링 모드를 선택합니다 (통합/화면만/상태만)
+2. '모니터링 시작'을 클릭하여 선택된 모드로 모니터링을 시작합니다
+3. 화면 확대 비율을 조절할 수 있습니다 (1x~8x)
+4. '화면 캡처'로 현재 화면과 상태를 함께 저장할 수 있습니다
 
 ⚙️ 갱신 모드 설정:
 • 갱신 주기: 50ms~2000ms 선택 가능 (FPS 조절)
@@ -2913,11 +3278,22 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
 • 수동 모드: 체크 해제시 수동으로만 화면+상태 캡처
 • 실시간 FPS 및 성공률 모니터링
 
-🔄 새로운 통합 프로토콜 방식:
-• 통합 응답: 하나의 화면 요청으로 화면과 상태를 동시에 받음
-• 효율성 향상: 별도의 상태 요청 불필요로 통신 오버헤드 감소
-• 충돌 방지: 화면과 상태 요청 간 충돌 문제 완전 해결
-• 데이터 일관성: 동일한 시점의 화면과 상태 정보 보장
+🔄 모니터링 모드별 특징:
+• 통합 모드: 하나의 화면 요청으로 화면과 상태를 동시에 받음
+  - 효율성 향상: 별도의 상태 요청 불필요로 통신 오버헤드 감소
+  - 충돌 방지: 화면과 상태 요청 간 충돌 문제 완전 해결
+  - 데이터 일관성: 동일한 시점의 화면과 상태 정보 보장
+
+• 화면만 모드: OLED 화면만 모니터링
+  - 성능 최적화: 화면 데이터만 처리하여 빠른 응답
+  - 낮은 CPU 사용량: 상태 파싱 과정 생략
+  - 고속 캡처: 화면 변화 감지에 최적화
+
+• 상태만 모드: 배터리/타이머 상태만 모니터링
+  - GET_STATUS 명령 주기적 전송
+  - 배터리 잔량, 타이머, 시스템 상태, LED 연결 상태 모니터링
+  - 상태 로그 자동 기록
+  - 화면 처리 없이 가볍게 동작
 
 🎛️ 원격 제어:
 • 타이머 시작/정지: 펌웨어의 타이머를 원격으로 제어
@@ -2937,16 +3313,19 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
 • 화면 캡처: PNG 형식으로 저장
 • 세션 기록: JSON 형식으로 모니터링 세션 저장
 • 고해상도 저장: 1x~16x 확대 저장 지원
+• 상태 로그: 자동 텍스트 파일 기록
 
 🚀 업데이트 내용 (v2.0):
+• 모니터링 모드 선택: 통합/화면만/상태만 모드 지원
 • 통합 응답 프로토콜: 화면+상태 동시 처리
+• 상태 전용 모니터링: GET_STATUS 명령 주기적 전송
 • 충돌 방지: 시리얼 락 및 요청 간격 관리
 • 안정성 향상: 무한루프 방지 및 오류 복구
-• 성능 최적화: 불필요한 상태 루프 제거
+• 성능 최적화: 모드별 최적화된 처리
 • 로그 강화: 상태 변화 자동 기록
 
 문의: OnBoard LED Timer Project
-버전: v2.0 (통합 응답 프로토콜 지원)
+버전: v2.0 (모니터링 모드 선택 지원)
 """
         messagebox.showinfo("도움말", help_text)
     
@@ -3702,7 +4081,7 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
         try:
             # 기본 상태 정보 (항상 반환되도록)
             status_info = {
-                'timestamp': datetime.now().strftime('%H:%M:%S'), 
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'source': 'firmware',
                 'battery': 18.6,
                 'timer': '00:00',
@@ -3812,6 +4191,185 @@ L2 연결: {'예' if status_data.get('l2_connected', False) else '아니오'}
                 'raw_data': response if isinstance(response, bytes) else str(response).encode('utf-8', errors='ignore'),
                 'raw_string': response.decode('utf-8', errors='ignore') if isinstance(response, bytes) else str(response)
             }
+
+    def on_monitoring_mode_changed(self, event):
+        """모니터링 모드 변경 처리"""
+        self.monitoring_mode = self.monitoring_mode_var.get()
+        
+        # 모드별 설명 업데이트
+        if self.monitoring_mode == "integrated":
+            self.monitoring_mode_label.config(text="통합 모드 (화면+상태)", foreground="blue")
+            self.log_message("🔄 모니터링 모드 변경: 통합 모드 (화면+상태)")
+        elif self.monitoring_mode == "screen_only":
+            self.monitoring_mode_label.config(text="화면만 모니터링", foreground="green")
+            self.log_message("🔄 모니터링 모드 변경: 화면만 모니터링")
+        elif self.monitoring_mode == "status_only":
+            self.monitoring_mode_label.config(text="상태만 모니터링", foreground="purple")
+            self.log_message("🔄 모니터링 모드 변경: 상태만 모니터링")
+        
+        # 모니터링 중이면 새로운 모드로 재시작
+        if self.is_monitoring:
+            self.log_message("⚙️ 모니터링 중 모드 변경 - 재시작 중...")
+            self.stop_monitoring()
+            time.sleep(0.5)  # 잠시 대기
+            self.start_monitoring()
+    
+    def start_monitoring(self):
+        """모니터링 시작 - 모드별 분기 처리"""
+        if not self.is_connected:
+            messagebox.showwarning("경고", "디바이스가 연결되지 않았습니다")
+            return
+            
+        try:
+            # 성능 통계 초기화
+            self.performance_stats = {
+                'start_time': time.time(),
+                'total_captures': 0,
+                'successful_captures': 0,
+                'fps_counter': 0,
+                'fps_start_time': time.time()
+            }
+            
+            # 모니터링 플래그 설정
+            self.is_monitoring = True
+            self.monitor_btn.config(text="모니터링 중지")
+            
+            # 시리얼 버퍼 클리어
+            self.clear_serial_buffers()
+            
+            # 모니터링 모드에 따른 분기 처리
+            if self.monitoring_mode == "integrated":
+                self.start_integrated_monitoring()
+            elif self.monitoring_mode == "screen_only":
+                self.start_screen_only_monitoring()
+            elif self.monitoring_mode == "status_only":
+                self.start_status_only_monitoring()
+            else:
+                # 기본값은 통합 모드
+                self.start_integrated_monitoring()
+                
+        except Exception as e:
+            self.log_message(f"❌ 모니터링 시작 오류: {str(e)}")
+            self.is_monitoring = False
+            self.monitor_btn.config(text="모니터링 시작")
+    
+    def start_integrated_monitoring(self):
+        """통합 모니터링 시작 (화면+상태)"""
+        try:
+            # 펌웨어 설정
+            try:
+                # 새로운 펌웨어에서는 화면 요청 시 상태도 함께 전송 (통합 응답 모드)
+                command = f"SET_UPDATE_MODE:INTEGRATED_RESPONSE,{self.update_interval_ms}\n"
+                self.send_command(command)
+                
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 통합 응답 모드 설정 완료")
+                else:
+                    # 기존 펌웨어 호환성을 위한 폴백
+                    command = f"SET_UPDATE_MODE:REQUEST_RESPONSE,{self.update_interval_ms}\n"
+                    self.send_command(command)
+                    self.log_message("🔄 기존 펌웨어 모드로 폴백")
+                
+                # 모니터링 활성화
+                self.send_command("START_MONITOR")
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 모니터링 활성화")
+                    
+            except Exception as setup_error:
+                self.log_message(f"⚠️ 펌웨어 설정 오류: {str(setup_error)} - 계속 진행")
+            
+            # 화면 캡처 루프 시작 (상태는 화면 응답에 포함됨)
+            if self.capture_thread is None or not self.capture_thread.is_alive():
+                self.capture_thread = threading.Thread(target=self.integrated_capture_loop, daemon=True)
+                self.capture_thread.start()
+                
+            mode_text = "통합 모드 (화면+상태)" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            
+            self.log_message(f"🚀 통합 모니터링 시작 - {mode_text}{interval_text}")
+            self.write_event_log("START", f"통합 모니터링 시작 - {mode_text}{interval_text}")
+            
+        except Exception as e:
+            self.log_message(f"❌ 통합 모니터링 시작 오류: {str(e)}")
+            raise
+    
+    def start_screen_only_monitoring(self):
+        """화면만 모니터링 시작"""
+        try:
+            # 펌웨어 설정 (화면만)
+            try:
+                command = f"SET_UPDATE_MODE:SCREEN_ONLY,{self.update_interval_ms}\n"
+                self.send_command(command)
+                
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 화면 전용 모드 설정 완료")
+                else:
+                    self.log_message("⚠️ 펌웨어 화면 전용 모드 설정 응답 없음")
+                
+                # 모니터링 활성화
+                self.send_command("START_MONITOR")
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 모니터링 활성화")
+                    
+            except Exception as setup_error:
+                self.log_message(f"⚠️ 펌웨어 설정 오류: {str(setup_error)} - 계속 진행")
+            
+            # 화면 전용 캡처 루프 시작
+            if self.capture_thread is None or not self.capture_thread.is_alive():
+                self.capture_thread = threading.Thread(target=self.screen_only_capture_loop, daemon=True)
+                self.capture_thread.start()
+                
+            mode_text = "화면 전용 모드" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            
+            self.log_message(f"🚀 화면 전용 모니터링 시작 - {mode_text}{interval_text}")
+            self.write_event_log("START", f"화면 전용 모니터링 시작 - {mode_text}{interval_text}")
+            
+        except Exception as e:
+            self.log_message(f"❌ 화면 전용 모니터링 시작 오류: {str(e)}")
+            raise
+    
+    def start_status_only_monitoring(self):
+        """상태만 모니터링 시작"""
+        try:
+            # 펌웨어 설정 (상태만)
+            try:
+                command = f"SET_UPDATE_MODE:STATUS_ONLY,{self.update_interval_ms}\n"
+                self.send_command(command)
+                
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 상태 전용 모드 설정 완료")
+                else:
+                    self.log_message("⚠️ 펌웨어 상태 전용 모드 설정 응답 없음")
+                
+                # 모니터링 활성화
+                self.send_command("START_MONITOR")
+                response = self.wait_for_response(1000)
+                if response and b'OK' in response:
+                    self.log_message("✅ 펌웨어 모니터링 활성화")
+                    
+            except Exception as setup_error:
+                self.log_message(f"⚠️ 펌웨어 설정 오류: {str(setup_error)} - 계속 진행")
+            
+            # 상태 전용 모니터링 루프 시작
+            if self.status_thread is None or not self.status_thread.is_alive():
+                self.status_thread = threading.Thread(target=self.status_only_monitoring_loop, daemon=True)
+                self.status_thread.start()
+                
+            mode_text = "상태 전용 모드" if self.auto_request_enabled else "수동 모드"
+            interval_text = f" ({self.update_interval_ms}ms)" if self.auto_request_enabled else ""
+            
+            self.log_message(f"🚀 상태 전용 모니터링 시작 - {mode_text}{interval_text}")
+            self.write_event_log("START", f"상태 전용 모니터링 시작 - {mode_text}{interval_text}")
+            
+        except Exception as e:
+            self.log_message(f"❌ 상태 전용 모니터링 시작 오류: {str(e)}")
+            raise
 
 if __name__ == "__main__":
     try:
