@@ -479,11 +479,13 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 {
     // 전압을 퍼센트로 변환 (19.0V = 0%, 24.7V = 100%)
     const float WARNING_VOLTAGE = 20.0f; // 경고 전압 임계값
+    const float MIN_VOLTAGE = 18.6f;
+    const float MAX_VOLTAGE = 24.0f;
 
     // 애니메이션 중이면 애니메이션 전압 사용, 아니면 실제 전압 사용
     float current_voltage = status->init_animation_active ? status->animation_voltage : voltage;
 
-    float voltage_percent = status->battery_percentage;
+    float voltage_percent = status->init_animation_active ? ((current_voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100.0f : status->battery_percentage;
 
     // 범위 제한
     if (voltage_percent < 0.0f)
