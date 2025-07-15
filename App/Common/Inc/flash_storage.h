@@ -29,7 +29,7 @@ typedef struct {
     uint8_t battery_status;         // 배터리 상태
     uint16_t last_battery_adc;      // 마지막 배터리 ADC 값
     uint32_t checksum;              // 체크섬
-} FlashData_t;
+} FlashData_t; // 20byte
 
 /* Function prototypes -------------------------------------------------------*/
 HAL_StatusTypeDef Flash_EraseStoragePage(void);

@@ -482,12 +482,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(Setting_Button_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : OUT_DC_EN_Pin */
-  GPIO_InitStruct.Pin = OUT_DC_EN_Pin;
+  /*Configure GPIO pin : CAM_ONOFF_Pin */
+  GPIO_InitStruct.Pin = CAM_ONOFF_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(OUT_DC_EN_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(CAM_ONOFF_GPIO_Port, &GPIO_InitStruct);
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */

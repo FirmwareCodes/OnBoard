@@ -523,7 +523,7 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
             '트렌드 분석'
         )
         self.graph_type_combo.addItems(['시계열', '히스토그램', '박스플롯', '산점도'])
-        self.graph_type_combo.currentTextChanged.connect(self.update_main_graph)
+        self.graph_type_combo.currentTextChanged.connect(self.on_graph_option_changed)
         control_layout.addWidget(graph_type_container)
         
         # 시간 표시 옵션
@@ -534,7 +534,7 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
             '측정 간격'
         )
         self.time_display_combo.addItems(['절대시간', '상대시간(시작점 기준)', '경과시간(분)', '경과시간(시간)'])
-        self.time_display_combo.currentTextChanged.connect(self.update_main_graph)
+        self.time_display_combo.currentTextChanged.connect(self.on_graph_option_changed)
         control_layout.addWidget(time_display_container)
         
         # 그리드 옵션
@@ -551,7 +551,7 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         # 커서 정보 표시 옵션
         self.show_cursor_info_check = QCheckBox('커서 정보 표시')
         self.show_cursor_info_check.setChecked(True)
-        self.show_cursor_info_check.toggled.connect(self.update_main_graph)
+        self.show_cursor_info_check.toggled.connect(self.on_graph_option_changed)
         control_layout.addWidget(self.show_cursor_info_check)
         
         control_layout.addStretch()
@@ -628,13 +628,102 @@ OnBoard 시스템 특징:
             self.update_main_graph()
     
     def on_analysis_option_changed(self):
-        """분석 옵션 변경 시 즉시 적용 (최적화)"""
-        if self.data is not None or self.multiple_data:
-            try:
-                # 비동기적으로 업데이트 (UI 응답성 향상)
-                QTimer.singleShot(10, self.update_main_graph)
-            except Exception as e:
-                print(f"분석 옵션 변경 오류: {e}")
+        """분석 옵션 변경 시 즉시 적용 (최적화 및 응답성 개선)"""
+        if not hasattr(self, '_update_timer'):
+            self._update_timer = QTimer()
+            self._update_timer.setSingleShot(True)
+            self._update_timer.timeout.connect(self._delayed_update_graphs)
+        
+        # 기존 타이머 정지 (중복 업데이트 방지)
+        self._update_timer.stop()
+        
+        # 데이터 유효성 검사
+        if self.data is None and not self.multiple_data:
+            return
+        
+        try:
+            # 즉시 적용 가능한 변경사항 (격자 등)
+            self._apply_immediate_changes()
+            
+            # 무거운 작업은 지연 실행 (50ms 후)
+            self._update_timer.start(50)
+            
+        except Exception as e:
+            print(f"분석 옵션 변경 오류: {e}")
+            # 오류 시 상태바에 메시지 표시
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(f'옵션 변경 오류: {str(e)}', 3000)
+    
+    def _apply_immediate_changes(self):
+        """즉시 적용 가능한 UI 변경사항"""
+        try:
+            # 격자 설정만 즉시 적용 (빠른 업데이트)
+            if hasattr(self, 'main_figure') and self.main_figure.get_axes():
+                for ax in self.main_figure.get_axes():
+                    self.apply_grid_settings(ax)
+                
+                # 캔버스 빠른 새로고침
+                if hasattr(self, 'main_canvas'):
+                    self.main_canvas.draw_idle()
+        except Exception as e:
+            print(f"즉시 변경사항 적용 오류: {e}")
+    
+    def _delayed_update_graphs(self):
+        """지연된 그래프 업데이트 (무거운 작업)"""
+        try:
+            # 현재 상태 확인
+            if self.data is None and not self.multiple_data:
+                return
+            
+            # 비교 모드와 단일 모드 구분하여 업데이트
+            if self.comparison_mode and self.multiple_data:
+                # 비교 모드: 메인 그래프만 업데이트 (성능 최적화)
+                self._update_comparison_main_only()
+            else:
+                # 단일 모드: 메인 그래프만 업데이트
+                self._update_single_main_only()
+            
+            # 상태바 업데이트
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage('분석 옵션이 적용되었습니다.', 2000)
+                
+        except Exception as e:
+            print(f"지연 그래프 업데이트 오류: {e}")
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(f'그래프 업데이트 실패: {str(e)}', 3000)
+    
+    def _update_comparison_main_only(self):
+        """비교 모드에서 메인 그래프만 업데이트 (최적화)"""
+        try:
+            self.main_figure.clear()
+            self.create_comparison_time_series()
+            if hasattr(self, 'main_canvas'):
+                self.main_canvas.draw_idle()
+        except Exception as e:
+            print(f"비교 모드 메인 그래프 업데이트 오류: {e}")
+    
+    def _update_single_main_only(self):
+        """단일 모드에서 메인 그래프만 업데이트 (최적화)"""
+        try:
+            self.main_figure.clear()
+            
+            # 현재 그래프 타입에 따라 분기
+            graph_type = self.graph_type_combo.currentText()
+            
+            if graph_type == '시계열':
+                self.plot_time_series()
+            elif graph_type == '히스토그램':
+                self.plot_histogram()
+            elif graph_type == '박스플롯':
+                self.plot_boxplot()
+            elif graph_type == '산점도':
+                self.plot_scatter()
+            
+            if hasattr(self, 'main_canvas'):
+                self.main_canvas.draw_idle()
+                
+        except Exception as e:
+            print(f"단일 모드 메인 그래프 업데이트 오류: {e}")
     
     def create_detail_analysis_tab(self):
         """상세 분석 탭 생성 (OnBoard 특화, 도움말 포함)"""
@@ -2257,75 +2346,115 @@ OnBoard 기준:
             return f"{avg_interval.total_seconds()/3600:.1f}시간"
     
     def apply_filters(self):
-        """모든 필터 적용 (시간 범위 + 배터리 범위)"""
+        """모든 필터 적용 (시간 범위 + 배터리 범위) - 성능 최적화"""
         if self.data is None:
+            QMessageBox.warning(self, '오류', '분석할 데이터가 없습니다.')
             return
         
-        filtered = self.data.copy()
-        original_count = len(filtered)
+        # 진행 상태 표시
+        self.statusBar().showMessage('필터를 적용하는 중...')
         
-        # 1. 시간 범위 필터 적용
-        range_text = self.time_range_combo.currentText()
-        
-        if range_text != '전체':
-            now = self.data['timestamp'].max()
+        try:
+            filtered = self.data.copy()
+            original_count = len(filtered)
             
-            if range_text == '최근 1시간':
-                start_time = now - timedelta(hours=1)
-            elif range_text == '최근 6시간':
-                start_time = now - timedelta(hours=6)
-            elif range_text == '최근 24시간':
-                start_time = now - timedelta(hours=24)
+            # 1. 시간 범위 필터 적용
+            range_text = self.time_range_combo.currentText()
+            
+            if range_text != '전체':
+                now = self.data['timestamp'].max()
+                
+                if range_text == '최근 1시간':
+                    start_time = now - timedelta(hours=1)
+                elif range_text == '최근 6시간':
+                    start_time = now - timedelta(hours=6)
+                elif range_text == '최근 24시간':
+                    start_time = now - timedelta(hours=24)
+                else:
+                    start_time = None
+                
+                if start_time is not None:
+                    filtered = filtered[filtered['timestamp'] >= start_time]
+            
+            time_filtered_count = len(filtered)
+            
+            # 2. 배터리 범위 필터 적용
+            min_battery = self.battery_min_spin.value()
+            max_battery = self.battery_max_spin.value()
+            
+            # 배터리 범위가 의미있는 경우에만 적용
+            if min_battery > 0 or max_battery < 50:
+                filtered = filtered[
+                    (filtered['battery'] >= min_battery) & 
+                    (filtered['battery'] <= max_battery)
+                ]
+            
+            final_count = len(filtered)
+            
+            # 필터링된 데이터 저장
+            self.filtered_data = filtered
+            
+            # 상태바에 상세 정보 표시
+            filter_info = f'필터 적용 완료: {original_count:,} → '
+            
+            if range_text != '전체':
+                filter_info += f'{time_filtered_count:,} (시간) → '
+            
+            filter_info += f'{final_count:,}개 (최종)'
+            
+            if range_text != '전체':
+                filter_info += f' | 시간: {range_text}'
+            
+            if min_battery > 0 or max_battery < 50:
+                filter_info += f' | 전압: {min_battery:.1f}V~{max_battery:.1f}V'
+            
+            # 필터링 결과가 없는 경우 경고
+            if final_count == 0:
+                QMessageBox.warning(self, '필터링 결과', 
+                                  '필터 조건에 맞는 데이터가 없습니다.\n'
+                                  '필터 설정을 확인해주세요.')
+                self.statusBar().showMessage('필터링 결과 없음')
+                return
+            
+            # 그래프 업데이트 (비동기적으로)
+            if not hasattr(self, '_filter_update_timer'):
+                self._filter_update_timer = QTimer()
+                self._filter_update_timer.setSingleShot(True)
+                self._filter_update_timer.timeout.connect(self._update_after_filter)
+            
+            self._filter_update_timer.stop()
+            self._filter_update_timer.start(100)  # 100ms 후 업데이트
+            
+            self.statusBar().showMessage(filter_info, 5000)  # 5초간 표시
+            print(f"필터링 완료: {original_count} → {final_count} 포인트")
+            
+        except Exception as e:
+            print(f"필터 적용 오류: {e}")
+            QMessageBox.critical(self, '오류', f'필터 적용 중 오류가 발생했습니다:\n{str(e)}')
+            self.statusBar().showMessage('필터 적용 실패')
+    
+    def _update_after_filter(self):
+        """필터 적용 후 그래프 업데이트"""
+        try:
+            # 현재 모드에 따라 적절한 업데이트 수행
+            if self.comparison_mode and self.multiple_data:
+                # 비교 모드에서는 메인 그래프만 업데이트
+                self._update_comparison_main_only()
             else:
-                start_time = None
+                # 단일 모드에서는 선택적 업데이트
+                self._update_single_main_only()
+                
+                # 통계 정보도 업데이트 (가벼운 작업)
+                if hasattr(self, 'update_statistics'):
+                    self.update_statistics()
             
-            if start_time is not None:
-                filtered = filtered[filtered['timestamp'] >= start_time]
-        
-        time_filtered_count = len(filtered)
-        
-        # 2. 배터리 범위 필터 적용
-        min_battery = self.battery_min_spin.value()
-        max_battery = self.battery_max_spin.value()
-        
-        # 배터리 범위가 의미있는 경우에만 적용
-        if min_battery > 0 or max_battery < 50:
-            filtered = filtered[
-                (filtered['battery'] >= min_battery) & 
-                (filtered['battery'] <= max_battery)
-            ]
-        
-        final_count = len(filtered)
-        
-        # 필터링된 데이터 저장
-        self.filtered_data = filtered
-        
-        # 그래프 업데이트
-        self.update_all_graphs()
-        
-        # 상태바에 상세 정보 표시
-        filter_info = f'필터 적용 완료: {original_count:,} → '
-        
-        if range_text != '전체':
-            filter_info += f'{time_filtered_count:,} (시간) → '
-        
-        filter_info += f'{final_count:,}개 (최종)'
-        
-        if range_text != '전체':
-            filter_info += f' | 시간: {range_text}'
-        
-        if min_battery > 0 or max_battery < 50:
-            filter_info += f' | 전압: {min_battery:.1f}V~{max_battery:.1f}V'
-        
-        self.statusBar().showMessage(filter_info)
-        
-        # 필터링 결과가 없는 경우 경고
-        if final_count == 0:
-            QMessageBox.warning(self, '필터링 결과', 
-                              '필터 조건에 맞는 데이터가 없습니다.\n'
-                              '필터 설정을 확인해주세요.')
-        
-        print(f"필터링 완료: {original_count} → {final_count} 포인트")
+            # 완료 메시지
+            final_count = len(self.filtered_data) if self.filtered_data is not None else 0
+            self.statusBar().showMessage(f'필터 적용 및 그래프 업데이트 완료 - {final_count:,}개 데이터', 3000)
+            
+        except Exception as e:
+            print(f"필터 후 업데이트 오류: {e}")
+            self.statusBar().showMessage(f'그래프 업데이트 오류: {str(e)}', 3000)
     
     def on_canvas_press(self, event):
         """캔버스 마우스 눌림 이벤트"""
@@ -3152,13 +3281,102 @@ OnBoard 기준:
         return 0
     
     def on_analysis_option_changed(self):
-        """분석 옵션 변경 시 즉시 적용 (최적화)"""
-        if self.data is not None or self.multiple_data:
-            try:
-                # 비동기적으로 업데이트 (UI 응답성 향상)
-                QTimer.singleShot(10, self.update_main_graph)
-            except Exception as e:
-                print(f"분석 옵션 변경 오류: {e}")
+        """분석 옵션 변경 시 즉시 적용 (최적화 및 응답성 개선)"""
+        if not hasattr(self, '_update_timer'):
+            self._update_timer = QTimer()
+            self._update_timer.setSingleShot(True)
+            self._update_timer.timeout.connect(self._delayed_update_graphs)
+        
+        # 기존 타이머 정지 (중복 업데이트 방지)
+        self._update_timer.stop()
+        
+        # 데이터 유효성 검사
+        if self.data is None and not self.multiple_data:
+            return
+        
+        try:
+            # 즉시 적용 가능한 변경사항 (격자 등)
+            self._apply_immediate_changes()
+            
+            # 무거운 작업은 지연 실행 (50ms 후)
+            self._update_timer.start(50)
+            
+        except Exception as e:
+            print(f"분석 옵션 변경 오류: {e}")
+            # 오류 시 상태바에 메시지 표시
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(f'옵션 변경 오류: {str(e)}', 3000)
+    
+    def _apply_immediate_changes(self):
+        """즉시 적용 가능한 UI 변경사항"""
+        try:
+            # 격자 설정만 즉시 적용 (빠른 업데이트)
+            if hasattr(self, 'main_figure') and self.main_figure.get_axes():
+                for ax in self.main_figure.get_axes():
+                    self.apply_grid_settings(ax)
+                
+                # 캔버스 빠른 새로고침
+                if hasattr(self, 'main_canvas'):
+                    self.main_canvas.draw_idle()
+        except Exception as e:
+            print(f"즉시 변경사항 적용 오류: {e}")
+    
+    def _delayed_update_graphs(self):
+        """지연된 그래프 업데이트 (무거운 작업)"""
+        try:
+            # 현재 상태 확인
+            if self.data is None and not self.multiple_data:
+                return
+            
+            # 비교 모드와 단일 모드 구분하여 업데이트
+            if self.comparison_mode and self.multiple_data:
+                # 비교 모드: 메인 그래프만 업데이트 (성능 최적화)
+                self._update_comparison_main_only()
+            else:
+                # 단일 모드: 메인 그래프만 업데이트
+                self._update_single_main_only()
+            
+            # 상태바 업데이트
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage('분석 옵션이 적용되었습니다.', 2000)
+                
+        except Exception as e:
+            print(f"지연 그래프 업데이트 오류: {e}")
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(f'그래프 업데이트 실패: {str(e)}', 3000)
+    
+    def _update_comparison_main_only(self):
+        """비교 모드에서 메인 그래프만 업데이트 (최적화)"""
+        try:
+            self.main_figure.clear()
+            self.create_comparison_time_series()
+            if hasattr(self, 'main_canvas'):
+                self.main_canvas.draw_idle()
+        except Exception as e:
+            print(f"비교 모드 메인 그래프 업데이트 오류: {e}")
+    
+    def _update_single_main_only(self):
+        """단일 모드에서 메인 그래프만 업데이트 (최적화)"""
+        try:
+            self.main_figure.clear()
+            
+            # 현재 그래프 타입에 따라 분기
+            graph_type = self.graph_type_combo.currentText()
+            
+            if graph_type == '시계열':
+                self.plot_time_series()
+            elif graph_type == '히스토그램':
+                self.plot_histogram()
+            elif graph_type == '박스플롯':
+                self.plot_boxplot()
+            elif graph_type == '산점도':
+                self.plot_scatter()
+            
+            if hasattr(self, 'main_canvas'):
+                self.main_canvas.draw_idle()
+                
+        except Exception as e:
+            print(f"단일 모드 메인 그래프 업데이트 오류: {e}")
     
     def clear_selection(self):
         """선택 구간 초기화"""
@@ -3169,7 +3387,11 @@ OnBoard 기준:
         
         # 그래프에서 선택 표시 제거
         if hasattr(self, 'main_canvas'):
-            self.update_main_graph()
+            # 전체 업데이트 대신 빠른 업데이트 사용
+            if hasattr(self, '_delayed_update_graphs'):
+                self._delayed_update_graphs()
+            else:
+                self.update_main_graph()
     
     def on_canvas_click(self, event):
         """캔버스 클릭 이벤트 처리 (데이터 포인트 선택)"""
@@ -3874,6 +4096,34 @@ OnBoard 기준:
         
         # 기존 통계 업데이트 메서드 호출
         self.update_statistics()
+    
+    def on_graph_option_changed(self):
+        """그래프 옵션 변경 시 최적화된 업데이트"""
+        # on_analysis_option_changed와 동일한 최적화 적용
+        if not hasattr(self, '_graph_update_timer'):
+            self._graph_update_timer = QTimer()
+            self._graph_update_timer.setSingleShot(True)
+            self._graph_update_timer.timeout.connect(self._delayed_update_graphs)
+        
+        # 기존 타이머 정지 (중복 업데이트 방지)
+        self._graph_update_timer.stop()
+        
+        # 데이터 유효성 검사
+        if self.data is None and not self.multiple_data:
+            return
+        
+        try:
+            # 즉시 적용 가능한 변경사항 (격자, 커서 등)
+            self._apply_immediate_changes()
+            
+            # 무거운 작업은 지연 실행 (100ms 후 - 그래프 변경은 약간 더 지연)
+            self._graph_update_timer.start(100)
+            
+        except Exception as e:
+            print(f"그래프 옵션 변경 오류: {e}")
+            # 오류 시 상태바에 메시지 표시
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(f'그래프 옵션 변경 오류: {str(e)}', 3000)
 
 def main():
     """메인 함수"""

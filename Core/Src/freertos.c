@@ -542,14 +542,14 @@ void StartAdcTask(void *argument)
 
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_duty);
 
-    uint8_t out_dc_en = HAL_GPIO_ReadPin(OUT_DC_EN_GPIO_Port, OUT_DC_EN_Pin);
-    if (Adc_State.Cut_Off_PWM && out_dc_en != GPIO_PIN_RESET)
+    uint8_t CAM_ONOFF = HAL_GPIO_ReadPin(CAM_ONOFF_GPIO_Port, CAM_ONOFF_Pin);
+    if (Adc_State.Cut_Off_PWM && CAM_ONOFF != GPIO_PIN_RESET)
     {
-      HAL_GPIO_WritePin(OUT_DC_EN_GPIO_Port, OUT_DC_EN_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(CAM_ONOFF_GPIO_Port, CAM_ONOFF_Pin, GPIO_PIN_RESET);
     }
-    else if (!Adc_State.Cut_Off_PWM && out_dc_en != GPIO_PIN_SET)
+    else if (!Adc_State.Cut_Off_PWM && CAM_ONOFF != GPIO_PIN_SET)
     {
-      HAL_GPIO_WritePin(OUT_DC_EN_GPIO_Port, OUT_DC_EN_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(CAM_ONOFF_GPIO_Port, CAM_ONOFF_Pin, GPIO_PIN_SET);
     }
 
     vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
