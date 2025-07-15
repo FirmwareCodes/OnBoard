@@ -28,7 +28,7 @@ class BatteryLogParser:
                 'min_voltage': 18.0,      # 3.0V × 6 (절대 최소값)
                 'cutoff_voltage': 18.0,   # 3.0V × 6 (OnBoard 시스템 실제 사용 최소값)
                 'recommended_100_voltage': 25.2,  # 추천 100% 전압
-                'recommended_0_voltage': 19.8,    # 추천 0% 전압 (3.3V × 6)
+                'recommended_0_voltage': 18.6,    # 추천 0% 전압 (3.3V × 6)
                 'cells': 6,
                 'cell_nominal': 3.7
             },
@@ -1120,22 +1120,33 @@ class BatteryLogParser:
                 if 'calculation_method' in resistance:
                     report.append(f"계산 방법: {resistance['calculation_method']}")
                 
+                # 계산 신뢰도 표시
+                if 'calculation_confidence' in resistance:
+                    report.append(f"계산 신뢰도: {resistance['calculation_confidence']}")
+                
                 if resistance['load_type'] == 'constant_power':
                     report.append(f"분석 방법: 일정 전력 부하")
                     report.append(f"평균 전류: {resistance['avg_current']:.3f}A")
                     report.append(f"전압 강하: {resistance['voltage_drop']:.3f}V")
                     report.append(f"전류 변화: {resistance['current_increase']:.3f}A")
-                    report.append(f"내부 저항 (방법1): {resistance['internal_resistance_method1']:.4f}Ω")
                     
-                    if resistance['dynamic_resistance'] is not None:
-                        report.append(f"동적 저항: {resistance['dynamic_resistance']:.4f}Ω")
+                    if 'initial_voltage_drop' in resistance:
+                        report.append(f"초기 전압 변화: {resistance['initial_voltage_drop']:.3f}V")
+                    if 'initial_current_change' in resistance:
+                        report.append(f"초기 전류 변화: {resistance['initial_current_change']:.3f}A")
                     
                 elif resistance['load_type'] == 'constant_current':
                     report.append(f"분석 방법: 일정 전류 부하")
                     report.append(f"일정 전류: {resistance['constant_current']:.3f}A")
                     report.append(f"전압 강하: {resistance['voltage_drop']:.3f}V")
-                    report.append(f"내부 저항: {resistance['internal_resistance']:.4f}Ω")
                     report.append(f"전압 효율성: {resistance['voltage_efficiency']:.3f}")
+                    
+                    if 'initial_voltage_drop' in resistance:
+                        report.append(f"초기 전압 변화: {resistance['initial_voltage_drop']:.3f}V")
+                
+                # 내부 저항 값 표시 (키 이름 통일)
+                if 'internal_resistance' in resistance:
+                    report.append(f"내부 저항: {resistance['internal_resistance']:.4f}Ω")
                 
                 if 'resistance_rating' in resistance:
                     rating = resistance['resistance_rating']
@@ -1160,10 +1171,6 @@ class BatteryLogParser:
                 if current > 0 and 'internal_resistance' in resistance:
                     power_loss = self._calculate_power_loss_due_to_resistance(
                         resistance['internal_resistance'], current)
-                    report.append(f"내부 저항으로 인한 전력 손실: {power_loss:.3f}W")
-                elif current > 0 and 'internal_resistance_method1' in resistance:
-                    power_loss = self._calculate_power_loss_due_to_resistance(
-                        resistance['internal_resistance_method1'], current)
                     report.append(f"내부 저항으로 인한 전력 손실: {power_loss:.3f}W")
                 
                 report.append("")
@@ -1723,69 +1730,84 @@ class BatteryLogParser:
 
     def _analyze_internal_resistance(self, df, load_watts, load_amps, config):
         """
-        배터리 내부 저항 분석 (수정됨: 물리적으로 올바른 계산)
+        배터리 등가 저항 분석 (수정됨: 정확한 명칭 사용)
         
-        방법:
-        1. 전압 변화율과 전류 변화율을 분석
-        2. 옴의 법칙 (R = ΔV / ΔI) 적용
-        3. 무부하 전압과 부하 전압 차이 분석
+        주의: 이 계산은 진정한 내부 저항이 아닌 등가 저항입니다.
         
-        수정사항:
-        - 전압 강하를 절댓값으로 처리
-        - 저항값이 항상 양수가 되도록 보정
-        - 물리적 의미에 맞는 계산 적용
+        등가 저항 = 전체 전압 강하 / 평균 전류
+        
+        등가 저항에는 다음이 포함됩니다:
+        - 실제 내부 저항 (DC 저항)
+        - 배터리 용량 감소로 인한 전압 강하
+        - 온도 효과
+        - 전류 밀도 효과
+        - 활성 물질 이용률 변화
+        
+        진정한 내부 저항 측정을 위해서는:
+        1. 부하 인가 직후 1초 이내의 전압 강하 측정
+        2. AC 임피던스 측정
+        3. 펄스 방전 테스트
         """
         resistance_analysis = {}
         
         voltages = df['battery'].values
         
-        if len(voltages) < 2:
-            return {'message': '내부 저항 계산을 위한 데이터가 부족합니다'}
+        if len(voltages) < 10:
+            return {'message': '등가 저항 계산을 위한 데이터가 부족합니다 (최소 10개 포인트 필요)'}
         
-        # 전압 변화량 계산 (절댓값 사용 - 전압 강하량)
-        voltage_drop = abs(voltages[0] - voltages[-1])  # 전압 강하의 절댓값
+        # 전체 전압 강하 (방전 곡선 기반)
+        total_voltage_drop = abs(voltages[0] - voltages[-1])
+        
+        # 초기 급격한 변화 구간 분석 (처음 1-2%)
+        initial_points = max(10, len(voltages) // 100)  # 1% 또는 최소 10개 포인트
+        initial_voltages = voltages[:initial_points]
+        initial_voltage_drop = abs(initial_voltages[0] - initial_voltages[-1])
         
         if load_watts is not None:
             # 일정 전력 부하의 경우
-            initial_current = load_watts / voltages[0]
-            final_current = load_watts / voltages[-1]
-            current_change = abs(final_current - initial_current)  # 전류 변화의 절댓값
-            
-            # 평균 전류로 내부 저항 추정
             avg_current = np.mean(load_watts / voltages)
             
-            # 방법 1: 전압 강하 / 평균 전류 (수정됨)
-            if avg_current > 0:
-                resistance_method1 = voltage_drop / avg_current
-            else:
-                resistance_method1 = 0
+            # 방법 1: 전체 구간 기반 등가 저항 (주요 결과)
+            equivalent_resistance_total = total_voltage_drop / avg_current if avg_current > 0 else 0
             
-            # 방법 2: 전압 변화 / 전류 변화 (동적 저항) (수정됨)
-            if current_change > 0.001:  # 전류 변화가 충분히 큰 경우
-                dynamic_resistance = voltage_drop / current_change
+            # 방법 2: 초기 구간 기반 추정 (참고용)
+            if len(initial_voltages) >= 2:
+                initial_avg_current = np.mean(load_watts / initial_voltages)
+                equivalent_resistance_initial = initial_voltage_drop / initial_avg_current if initial_avg_current > 0 else 0
             else:
-                dynamic_resistance = None
+                equivalent_resistance_initial = 0
+            
+            # 전류 변화 계산
+            initial_current = load_watts / voltages[0]
+            final_current = load_watts / voltages[-1]
+            current_change = abs(final_current - initial_current)
             
             resistance_analysis = {
                 'load_type': 'constant_power',
                 'avg_current': avg_current,
-                'voltage_drop': voltage_drop,  # 수정: 절댓값 사용
-                'current_increase': current_change,  # 수정: 절댓값 사용
-                'internal_resistance_method1': resistance_method1,
-                'dynamic_resistance': dynamic_resistance,
+                'voltage_drop': total_voltage_drop,
+                'current_increase': current_change,
+                'internal_resistance': equivalent_resistance_total,  # 실제로는 등가 저항
+                'equivalent_resistance_initial': equivalent_resistance_initial,
                 'resistance_unit': 'ohms',
-                'calculation_method': '전압강하/평균전류 (일정전력부하)'
+                'calculation_method': '전체구간 전압강하/평균전류 (등가저항)',
+                'calculation_confidence': '보통',
+                'resistance_type': 'equivalent',  # 등가 저항임을 명시
+                'initial_voltage_drop': initial_voltage_drop,
+                'total_voltage_drop': total_voltage_drop
             }
             
         elif load_amps is not None:
             # 일정 전류 부하의 경우
             constant_current = load_amps
             
-            # 옴의 법칙: R = ΔV / I (수정됨: 전압 강하 절댓값 사용)
+            # 등가 저항 계산
             if constant_current > 0:
-                internal_resistance = voltage_drop / constant_current
+                equivalent_resistance_total = total_voltage_drop / constant_current
+                equivalent_resistance_initial = initial_voltage_drop / constant_current if initial_voltage_drop > 0 else 0
             else:
-                internal_resistance = 0
+                equivalent_resistance_total = 0
+                equivalent_resistance_initial = 0
             
             # 전압 효율성 계산
             voltage_efficiency = voltages[-1] / voltages[0] if voltages[0] > 0 else 1.0
@@ -1793,76 +1815,93 @@ class BatteryLogParser:
             resistance_analysis = {
                 'load_type': 'constant_current',
                 'constant_current': constant_current,
-                'voltage_drop': voltage_drop,  # 수정: 절댓값 사용
-                'internal_resistance': internal_resistance,
+                'voltage_drop': total_voltage_drop,
+                'internal_resistance': equivalent_resistance_total,  # 실제로는 등가 저항
+                'equivalent_resistance_initial': equivalent_resistance_initial,
                 'voltage_efficiency': voltage_efficiency,
                 'resistance_unit': 'ohms',
-                'calculation_method': '전압강하/일정전류 (일정전류부하)'
+                'calculation_method': '전체구간 전압강하/일정전류 (등가저항)',
+                'calculation_confidence': '높음',
+                'resistance_type': 'equivalent',  # 등가 저항임을 명시
+                'initial_voltage_drop': initial_voltage_drop,
+                'total_voltage_drop': total_voltage_drop
             }
+        else:
+            return {'message': '부하 정보가 없어서 등가 저항을 계산할 수 없습니다'}
         
-        # 내부 저항 등급 평가
+        # 등가 저항 등급 평가 (내부 저항 기준보다 완화된 기준 적용)
         if 'internal_resistance' in resistance_analysis:
             resistance_value = resistance_analysis['internal_resistance']
-        elif 'internal_resistance_method1' in resistance_analysis:
-            resistance_value = resistance_analysis['internal_resistance_method1']
-        else:
-            resistance_value = None
-        
-        if resistance_value is not None and resistance_value > 0:
-            resistance_analysis['resistance_rating'] = self._evaluate_resistance_rating(
-                resistance_value, config['cells'])
-            resistance_analysis['resistance_per_cell'] = resistance_value / config['cells']
             
-            # 물리적 타당성 검증 추가
-            resistance_per_cell_mohm = (resistance_value * 1000) / config['cells']
-            if resistance_per_cell_mohm > 1000:  # 1Ω/cell 이상
-                resistance_analysis['warning'] = f"비정상적으로 높은 저항값 ({resistance_per_cell_mohm:.1f}mΩ/cell). 계산 결과를 재검토하세요."
-            elif resistance_per_cell_mohm < 1:  # 1mΩ/cell 미만
-                resistance_analysis['warning'] = f"비정상적으로 낮은 저항값 ({resistance_per_cell_mohm:.1f}mΩ/cell). 측정 조건을 확인하세요."
+            if resistance_value is not None and resistance_value > 0:
+                # 등가 저항용 평가 기준 (내부 저항보다 높은 값이 정상)
+                resistance_analysis['resistance_rating'] = self._evaluate_equivalent_resistance_rating(
+                    resistance_value, config['cells'])
+                resistance_analysis['resistance_per_cell'] = resistance_value / config['cells']
+                
+                # 등가 저항 타당성 검증
+                resistance_per_cell_mohm = (resistance_value * 1000) / config['cells']
+                
+                # 등가 저항은 내부 저항보다 훨씬 높을 수 있음
+                if resistance_per_cell_mohm > 10000:  # 10Ω/cell 이상
+                    resistance_analysis['warning'] = f"매우 높은 등가 저항값 ({resistance_per_cell_mohm:.0f}mΩ/cell). 배터리 교체를 고려하세요."
+                elif resistance_per_cell_mohm > 5000:  # 5Ω/cell 이상
+                    resistance_analysis['warning'] = f"높은 등가 저항값 ({resistance_per_cell_mohm:.0f}mΩ/cell). 배터리 성능이 저하되었습니다."
+                elif resistance_per_cell_mohm < 10:  # 10mΩ/cell 미만
+                    resistance_analysis['warning'] = f"비정상적으로 낮은 등가 저항값 ({resistance_per_cell_mohm:.1f}mΩ/cell). 계산을 재검토하세요."
+                
+                # 부하별 등가 저항 차이 설명
+                resistance_analysis['explanation'] = (
+                    "등가 저항은 부하 크기에 따라 달라질 수 있습니다. "
+                    "높은 부하에서는 배터리 내부 온도 상승, 활성 물질 이용률 변화 등으로 "
+                    "등가 저항이 감소하는 경향이 있습니다."
+                )
+            else:
+                resistance_analysis['warning'] = "등가 저항 계산 실패 - 데이터 품질을 확인하세요."
         
         return resistance_analysis
     
-    def _evaluate_resistance_rating(self, total_resistance, cell_count):
+    def _evaluate_equivalent_resistance_rating(self, total_resistance, cell_count):
         """
-        내부 저항 등급 평가
+        등가 저항 등급 평가 (내부 저항보다 완화된 기준)
         
-        일반적인 리튬이온 배터리 내부 저항 기준:
-        - 신품: 20-50mΩ/cell
-        - 양호: 50-100mΩ/cell  
-        - 보통: 100-200mΩ/cell
-        - 주의: 200-500mΩ/cell
-        - 교체필요: 500mΩ/cell 이상
+        등가 저항은 내부 저항보다 훨씬 높은 값이 정상입니다.
+        - 우수: 100mΩ/cell 이하
+        - 양호: 100-500mΩ/cell
+        - 보통: 500-1000mΩ/cell  
+        - 주의: 1000-5000mΩ/cell
+        - 교체필요: 5000mΩ/cell 이상
         """
         resistance_per_cell = (total_resistance * 1000) / cell_count  # mΩ 단위로 변환
         
-        if resistance_per_cell <= 50:
+        if resistance_per_cell <= 100:
             return {
                 'grade': '우수',
-                'description': '신품 수준의 낮은 내부 저항',
-                'resistance_per_cell_mohm': resistance_per_cell
-            }
-        elif resistance_per_cell <= 100:
-            return {
-                'grade': '양호', 
-                'description': '정상적인 내부 저항 범위',
-                'resistance_per_cell_mohm': resistance_per_cell
-            }
-        elif resistance_per_cell <= 200:
-            return {
-                'grade': '보통',
-                'description': '약간 높은 내부 저항, 모니터링 필요',
+                'description': '낮은 등가 저항, 우수한 배터리 성능',
                 'resistance_per_cell_mohm': resistance_per_cell
             }
         elif resistance_per_cell <= 500:
             return {
+                'grade': '양호', 
+                'description': '정상적인 등가 저항 범위',
+                'resistance_per_cell_mohm': resistance_per_cell
+            }
+        elif resistance_per_cell <= 1000:
+            return {
+                'grade': '보통',
+                'description': '약간 높은 등가 저항, 모니터링 필요',
+                'resistance_per_cell_mohm': resistance_per_cell
+            }
+        elif resistance_per_cell <= 5000:
+            return {
                 'grade': '주의',
-                'description': '높은 내부 저항, 성능 저하',
+                'description': '높은 등가 저항, 배터리 성능 저하',
                 'resistance_per_cell_mohm': resistance_per_cell
             }
         else:
             return {
                 'grade': '교체 필요',
-                'description': '매우 높은 내부 저항, 즉시 교체 권장',
+                'description': '매우 높은 등가 저항, 즉시 교체 권장',
                 'resistance_per_cell_mohm': resistance_per_cell
             }
     

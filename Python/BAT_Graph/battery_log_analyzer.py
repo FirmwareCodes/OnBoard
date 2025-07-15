@@ -112,6 +112,15 @@ class BatteryLogAnalyzer(QMainWindow):
         self.analytics = BatteryAnalytics()
         self.parser = BatteryLogParser()
         
+        # 파일 경로 관련 속성 초기화
+        self.file_path = None  # 단일 파일 경로 (기존 호환성)
+        
+        # 다중 파일 처리를 위한 새로운 속성들
+        self.multiple_data = {}  # 파일별 데이터 저장
+        self.file_paths = []     # 선택된 파일 경로들
+        self.selected_files = [] # UI에서 선택된 파일들
+        self.comparison_mode = False  # 비교 모드 플래그
+        
         # 분석 결과 저장
         self.analysis_results = {}
         self.current_selection = None
@@ -295,17 +304,34 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         """툴바 생성"""
         toolbar_layout = QHBoxLayout()
         
-        # 파일 선택 버튼
-        self.file_btn = QPushButton('📁 로그 파일 선택')
-        self.file_btn.clicked.connect(self.select_file)
+        # 파일 선택 버튼들
+        file_buttons_layout = QHBoxLayout()
+        
+        # 단일 파일 선택 버튼
+        self.file_btn = QPushButton('📁 단일 파일 선택')
+        self.file_btn.clicked.connect(self.select_single_file)
         self.file_btn.setMinimumHeight(40)
-        toolbar_layout.addWidget(self.file_btn)
+        file_buttons_layout.addWidget(self.file_btn)
+        
+        # 다중 파일 선택 버튼
+        self.multi_file_btn = QPushButton('📂 다중 파일 선택')
+        self.multi_file_btn.clicked.connect(self.select_multiple_files)
+        self.multi_file_btn.setMinimumHeight(40)
+        file_buttons_layout.addWidget(self.multi_file_btn)
+        
+        toolbar_layout.addLayout(file_buttons_layout)
         
         # 파일 정보 라벨
         self.file_info_label = QLabel('선택된 파일: 없음')
         toolbar_layout.addWidget(self.file_info_label)
         
         toolbar_layout.addStretch()
+        
+        # 비교 모드 체크박스
+        self.comparison_mode_check = QCheckBox('비교 모드')
+        self.comparison_mode_check.toggled.connect(self.toggle_comparison_mode)
+        self.comparison_mode_check.setToolTip('여러 파일의 데이터를 하나의 그래프에서 비교')
+        toolbar_layout.addWidget(self.comparison_mode_check)
         
         # 분석 시작 버튼
         self.analyze_btn = QPushButton('🔍 분석 시작')
@@ -328,6 +354,24 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         panel = QWidget()
         layout = QVBoxLayout(panel)
         
+        # 파일 선택 상태 그룹
+        file_group = QGroupBox('선택된 파일')
+        file_layout = QVBoxLayout(file_group)
+        
+        # 파일 목록 위젯
+        self.file_list_widget = QWidget()
+        file_list_layout = QVBoxLayout(self.file_list_widget)
+        file_list_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 스크롤 영역
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(self.file_list_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMaximumHeight(150)
+        file_layout.addWidget(scroll_area)
+        
+        layout.addWidget(file_group)
+        
         # 데이터 정보 그룹
         info_group = QGroupBox('데이터 정보')
         info_layout = QVBoxLayout(info_group)
@@ -346,8 +390,6 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         filter_layout.addWidget(QLabel('시간 범위:'), 0, 0)
         self.time_range_combo = QComboBox()
         self.time_range_combo.addItems(['전체', '최근 1시간', '최근 6시간', '최근 24시간', '사용자 정의'])
-        # 자동 적용 이벤트 제거
-        # self.time_range_combo.currentTextChanged.connect(self.apply_time_filter)
         filter_layout.addWidget(self.time_range_combo, 0, 1)
         
         filter_layout.addWidget(QLabel('배터리 범위 (V):'), 1, 0)
@@ -356,8 +398,6 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         self.battery_min_spin.setRange(0, 50)  # OnBoard 모니터 범위 확대
         self.battery_min_spin.setValue(0)
         self.battery_min_spin.setSingleStep(0.1)
-        # 자동 적용 이벤트 제거
-        # self.battery_min_spin.valueChanged.connect(self.apply_battery_filter)
         battery_layout.addWidget(self.battery_min_spin)
         
         battery_layout.addWidget(QLabel(' ~ '))
@@ -366,8 +406,6 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         self.battery_max_spin.setRange(0, 50)  # OnBoard 모니터 범위 확대
         self.battery_max_spin.setValue(30)    # OnBoard 기본 최대값
         self.battery_max_spin.setSingleStep(0.1)
-        # 자동 적용 이벤트 제거
-        # self.battery_max_spin.valueChanged.connect(self.apply_battery_filter)
         battery_layout.addWidget(self.battery_max_spin)
         
         filter_layout.addLayout(battery_layout, 1, 1)
@@ -502,12 +540,12 @@ R² 값: 트렌드의 신뢰도 (0~1)""",
         # 그리드 옵션
         self.show_grid_check = QCheckBox('격자 표시')
         self.show_grid_check.setChecked(True)
-        self.show_grid_check.toggled.connect(self.update_main_graph)
+        self.show_grid_check.toggled.connect(self.update_grid_settings_only)
         control_layout.addWidget(self.show_grid_check)
         
         self.show_minor_grid_check = QCheckBox('세부 격자')
         self.show_minor_grid_check.setChecked(False)
-        self.show_minor_grid_check.toggled.connect(self.update_main_graph)
+        self.show_minor_grid_check.toggled.connect(self.update_grid_settings_only)
         control_layout.addWidget(self.show_minor_grid_check)
         
         # 커서 정보 표시 옵션
@@ -574,6 +612,29 @@ OnBoard 시스템 특징:
         layout.addWidget(self.main_canvas)
         
         return widget
+    
+    def update_grid_settings_only(self):
+        """격자 설정만 업데이트 (전체 그래프 다시 그리지 않음)"""
+        try:
+            # 현재 표시된 모든 축에 대해 격자 설정 적용
+            for ax in self.main_figure.get_axes():
+                self.apply_grid_settings(ax)
+            
+            # 캔버스만 새로고침 (빠른 업데이트)
+            self.main_canvas.draw_idle()
+        except Exception as e:
+            print(f"격자 설정 업데이트 오류: {e}")
+            # 오류 발생 시에만 전체 그래프 업데이트
+            self.update_main_graph()
+    
+    def on_analysis_option_changed(self):
+        """분석 옵션 변경 시 즉시 적용 (최적화)"""
+        if self.data is not None or self.multiple_data:
+            try:
+                # 비동기적으로 업데이트 (UI 응답성 향상)
+                QTimer.singleShot(10, self.update_main_graph)
+            except Exception as e:
+                print(f"분석 옵션 변경 오류: {e}")
     
     def create_detail_analysis_tab(self):
         """상세 분석 탭 생성 (OnBoard 특화, 도움말 포함)"""
@@ -839,72 +900,163 @@ OnBoard 기준:
             self.statusBar().showMessage(f'파일 선택됨: {os.path.basename(file_path)}')
     
     def start_analysis(self):
-        """분석 시작"""
+        """분석 시작 - 단일/다중 파일 지원"""
         try:
-            # 파일 파싱
-            self.statusBar().showMessage('파일을 파싱하는 중...')
-            self.data = self.parser.parse_log_file(self.file_path)
-            
-            if self.data is None or len(self.data) == 0:
-                QMessageBox.warning(self, '오류', '파일을 파싱할 수 없거나 데이터가 없습니다.')
-                return
-            
-            # 배터리 범위 자동 설정
-            self.auto_adjust_battery_range()
-            
-            # 분석 수행
-            self.statusBar().showMessage('데이터를 분석하는 중...')
-            self.analysis_results = self.analytics.analyze(self.data)
-            
-            # UI 업데이트
-            self.update_data_info()
-            self.update_all_graphs()
-            self.update_statistics()
-            
-            self.save_btn.setEnabled(True)
-            self.statusBar().showMessage(f'분석 완료 - {len(self.data)}개 데이터 포인트')
-            
+            if self.comparison_mode and len(self.selected_files) > 1:
+                # 다중 파일 비교 분석
+                self.start_multiple_file_analysis()
+            else:
+                # 단일 파일 분석
+                self.start_single_file_analysis()
+                
         except Exception as e:
             QMessageBox.critical(self, '오류', f'분석 중 오류가 발생했습니다:\n{str(e)}')
             self.statusBar().showMessage('분석 실패')
     
-    def auto_adjust_battery_range(self):
-        """데이터에 따른 배터리 범위 자동 조정"""
-        if self.data is None or len(self.data) == 0:
+    def start_single_file_analysis(self):
+        """단일 파일 분석"""
+        if not self.selected_files:
+            QMessageBox.warning(self, '오류', '선택된 파일이 없습니다.')
             return
         
-        min_voltage = self.data['battery'].min()
-        max_voltage = self.data['battery'].max()
-        voltage_range = max_voltage - min_voltage
+        file_path = self.selected_files[0]
+        self.file_path = file_path  # file_path 속성 설정
+        
+        # 그래프 타입 콤보박스 활성화 (단일 모드)
+        self.graph_type_combo.setEnabled(True)
+        
+        # 파일 파싱
+        self.statusBar().showMessage('파일을 파싱하는 중...')
+        self.data = self.parser.parse_log_file(file_path)
+        
+        if self.data is None or len(self.data) == 0:
+            QMessageBox.warning(self, '오류', '파일을 파싱할 수 없거나 데이터가 없습니다.')
+            return
+        
+        # 배터리 범위 자동 설정
+        self.auto_adjust_battery_range()
+        
+        # 분석 수행
+        self.statusBar().showMessage('데이터를 분석하는 중...')
+        self.analysis_results = self.analytics.analyze(self.data)
+        
+        # UI 업데이트
+        self.update_data_info()
+        self.update_all_graphs()
+        self.update_statistics()
+        
+        self.save_btn.setEnabled(True)
+        self.statusBar().showMessage(f'분석 완료 - {len(self.data)}개 데이터 포인트')
+    
+    def start_multiple_file_analysis(self):
+        """다중 파일 비교 분석"""
+        if len(self.selected_files) < 2:
+            QMessageBox.warning(self, '오류', '비교 분석을 위해서는 최소 2개 파일이 필요합니다.')
+            return
+        
+        # 다중 데이터 초기화
+        self.multiple_data.clear()
+        
+        # 각 파일 파싱
+        total_files = len(self.selected_files)
+        failed_files = []
+        
+        for i, file_path in enumerate(self.selected_files):
+            filename = os.path.basename(file_path)
+            self.statusBar().showMessage(f'파일 파싱 중... ({i+1}/{total_files}) {filename}')
+            
+            data = self.parser.parse_log_file(file_path)
+            
+            if data is not None and len(data) > 0:
+                # 파일명을 키로 사용
+                self.multiple_data[filename] = {
+                    'data': data,
+                    'path': file_path,
+                    'analysis': None
+                }
+            else:
+                failed_files.append(filename)
+        
+        # 파싱 실패한 파일 알림
+        if failed_files:
+            failed_list = '\n'.join(failed_files)
+            QMessageBox.warning(self, '파싱 실패', f'다음 파일들을 파싱할 수 없습니다:\n{failed_list}')
+        
+        # 성공적으로 파싱된 파일이 없는 경우
+        if not self.multiple_data:
+            QMessageBox.warning(self, '오류', '파싱 가능한 파일이 없습니다.')
+            return
+        
+        # 각 파일 개별 분석
+        for filename, file_info in self.multiple_data.items():
+            self.statusBar().showMessage(f'분석 중... {filename}')
+            file_info['analysis'] = self.analytics.analyze(file_info['data'])
+        
+        # 첫 번째 파일을 기본 데이터로 설정 (UI 호환성)
+        first_filename = list(self.multiple_data.keys())[0]
+        self.data = self.multiple_data[first_filename]['data']
+        self.analysis_results = self.multiple_data[first_filename]['analysis']
+        
+        # 배터리 범위 자동 설정 (모든 파일 고려)
+        self.auto_adjust_battery_range_multiple()
+        
+        # UI 업데이트 (비교 모드)
+        self.update_data_info_multiple()
+        self.update_all_graphs_comparison()
+        self.update_statistics_comparison()
+        
+        self.save_btn.setEnabled(True)
+        
+        successful_count = len(self.multiple_data)
+        total_points = sum(len(info['data']) for info in self.multiple_data.values())
+        self.statusBar().showMessage(f'비교 분석 완료 - {successful_count}개 파일, {total_points:,}개 데이터 포인트')
+    
+    def auto_adjust_battery_range_multiple(self):
+        """다중 파일의 데이터에 따른 배터리 범위 자동 조정"""
+        if not self.multiple_data:
+            return
+        
+        all_min_voltages = []
+        all_max_voltages = []
+        
+        for file_info in self.multiple_data.values():
+            data = file_info['data']
+            if 'battery' in data.columns:
+                all_min_voltages.append(data['battery'].min())
+                all_max_voltages.append(data['battery'].max())
+        
+        if not all_min_voltages:
+            return
+        
+        global_min = min(all_min_voltages)
+        global_max = max(all_max_voltages)
+        voltage_range = global_max - global_min
         
         # 여유분을 두고 범위 설정
         range_margin = voltage_range * 0.1  # 10% 여유분
         
-        adjusted_min = max(0, min_voltage - range_margin)
-        adjusted_max = max_voltage + range_margin
+        adjusted_min = max(0, global_min - range_margin)
+        adjusted_max = global_max + range_margin
         
         # 스핀박스 값 업데이트
         self.battery_min_spin.setValue(adjusted_min)
         self.battery_max_spin.setValue(adjusted_max)
-        
-        # OnBoard 로그인지 확인하여 메시지 표시
-        is_onboard = 'source' in self.data.columns and self.data['source'].iloc[0] == 'onboard_monitor'
-        if is_onboard:
-            self.statusBar().showMessage(
-                f'OnBoard 모니터 로그 감지 - 전압 범위: {min_voltage:.2f}V ~ {max_voltage:.2f}V'
-            )
-        else:
-            self.statusBar().showMessage(
-                f'일반 배터리 로그 - 전압 범위: {min_voltage:.2f}V ~ {max_voltage:.2f}V'
-            )
     
     def update_data_info(self):
         """데이터 정보 업데이트"""
         if self.data is None:
             return
         
+        # 파일명 처리 - file_path가 None인 경우 대비
+        if self.file_path:
+            filename = os.path.basename(self.file_path)
+        elif self.file_paths:
+            filename = os.path.basename(self.file_paths[0])
+        else:
+            filename = "알 수 없는 파일"
+        
         info_text = f"""
-파일: {os.path.basename(self.file_path)}
+파일: {filename}
 데이터 포인트: {len(self.data):,}개
 시간 범위: {self.data['timestamp'].min()} ~ {self.data['timestamp'].max()}
 배터리 전압 범위: {self.data['battery'].min():.2f}V ~ {self.data['battery'].max():.2f}V
@@ -913,11 +1065,16 @@ OnBoard 기준:
         self.data_info_text.setText(info_text.strip())
     
     def update_all_graphs(self):
-        """모든 그래프 업데이트"""
-        self.update_main_graph()
-        self.update_detail_analysis()
-        self.update_diagnostic_info()
-        self.update_performance_analysis()
+        """모든 그래프 업데이트 - 모드별 분기 처리"""
+        if self.comparison_mode and self.multiple_data:
+            # 비교 모드
+            self.update_all_graphs_comparison()
+        else:
+            # 단일 모드
+            self.update_main_graph()
+            self.update_detail_analysis()
+            self.update_diagnostic_info()
+            self.update_performance_analysis()
     
     def update_diagnostic_info(self):
         """OnBoard 로그 특화 진단 정보 업데이트"""
@@ -1328,22 +1485,28 @@ OnBoard 기준:
                    fontfamily=self.korean_font if self.korean_font else 'sans-serif')
     
     def update_main_graph(self):
-        """메인 그래프 업데이트"""
-        if self.data is None:
+        """메인 그래프 업데이트 - 비교 모드와 단일 모드 구분 처리"""
+        if self.data is None and not self.multiple_data:
             return
         
         self.main_figure.clear()
         
-        graph_type = self.graph_type_combo.currentText()
-        
-        if graph_type == '시계열':
-            self.plot_time_series()
-        elif graph_type == '히스토그램':
-            self.plot_histogram()
-        elif graph_type == '박스플롯':
-            self.plot_boxplot()
-        elif graph_type == '산점도':
-            self.plot_scatter()
+        # 비교 모드인지 확인
+        if self.comparison_mode and self.multiple_data:
+            # 비교 모드: 시계열만 지원 (다른 그래프 타입은 상세 분석 탭에서)
+            self.create_comparison_time_series()
+        else:
+            # 단일 모드: 모든 그래프 타입 지원
+            graph_type = self.graph_type_combo.currentText()
+            
+            if graph_type == '시계열':
+                self.plot_time_series()
+            elif graph_type == '히스토그램':
+                self.plot_histogram()
+            elif graph_type == '박스플롯':
+                self.plot_boxplot()
+            elif graph_type == '산점도':
+                self.plot_scatter()
         
         self.main_canvas.draw()
     
@@ -1505,8 +1668,27 @@ OnBoard 기준:
             print(f"그래프 새로고침 오류: {e}")
     
     def get_current_data(self):
-        """현재 사용할 데이터 반환 (필터링된 데이터 우선)"""
-        return self.filtered_data if self.filtered_data is not None else self.data
+        """현재 사용할 데이터 반환 (필터링된 데이터 우선, 비교 모드 지원)"""
+        if self.comparison_mode and self.multiple_data:
+            # 비교 모드에서는 첫 번째 파일 데이터를 기본으로 반환
+            first_filename = list(self.multiple_data.keys())[0]
+            primary_data = self.multiple_data[first_filename]['data']
+            return self.filtered_data if self.filtered_data is not None else primary_data
+        else:
+            # 단일 파일 모드
+            return self.filtered_data if self.filtered_data is not None else self.data
+    
+    def get_all_comparison_data(self):
+        """비교 모드에서 모든 파일의 데이터 반환"""
+        if not self.comparison_mode or not self.multiple_data:
+            return {}
+        
+        result = {}
+        for filename, file_info in self.multiple_data.items():
+            if filename in [os.path.basename(path) for path in self.selected_files]:
+                result[filename] = file_info['data']
+        
+        return result
     
     def prepare_time_axis(self, data):
         """시간 축 데이터 준비"""
@@ -2335,6 +2517,17 @@ OnBoard 기준:
         
         stats = self.analysis_results.get('statistics', {})
         
+        # 파일명 처리 - file_path가 None인 경우 대비
+        if self.file_path:
+            report_filename = os.path.basename(self.file_path)
+        elif self.file_paths:
+            if len(self.file_paths) == 1:
+                report_filename = os.path.basename(self.file_paths[0])
+            else:
+                report_filename = f"{len(self.file_paths)}개 파일 비교 분석"
+        else:
+            report_filename = "배터리 로그 분석"
+        
         # 모든 그래프를 이미지로 변환
         main_graph_img = self.figure_to_base64(self.main_figure)
         detail_graph_img = self.figure_to_base64(self.detail_figure)
@@ -2467,8 +2660,8 @@ OnBoard 기준:
     <div class="header">
         <h1>🔋 배터리 로그 분석 보고서</h1>
         <p style="font-size: 1.2em; margin: 10px 0;"><strong>생성일시:</strong> {datetime.now().strftime('%Y년 %m월 %d일 %H시 %M분')}</p>
-        <p style="font-size: 1.1em;"><strong>분석 파일:</strong> {os.path.basename(self.file_path)}</p>
-        <p><strong>분석 프로그램:</strong> OnBoard 배터리 로그 분석기 v2.0</p>
+        <p style="font-size: 1.1em;"><strong>분석 파일:</strong> {report_filename}</p>
+        <p><strong>분석 프로그램:</strong> OnBoard 배터리 로그 분석기 v2.1</p>
     </div>
     
     <div class="section">
@@ -2959,9 +3152,13 @@ OnBoard 기준:
         return 0
     
     def on_analysis_option_changed(self):
-        """분석 옵션 변경 시 즉시 적용"""
-        if self.data is not None:
-            self.update_main_graph()
+        """분석 옵션 변경 시 즉시 적용 (최적화)"""
+        if self.data is not None or self.multiple_data:
+            try:
+                # 비동기적으로 업데이트 (UI 응답성 향상)
+                QTimer.singleShot(10, self.update_main_graph)
+            except Exception as e:
+                print(f"분석 옵션 변경 오류: {e}")
     
     def clear_selection(self):
         """선택 구간 초기화"""
@@ -3193,6 +3390,490 @@ OnBoard 기준:
         except Exception as e:
             print(f"가장 가까운 데이터 포인트 찾기 오류: {e}")
             return None
+    
+    def select_single_file(self):
+        """단일 파일 선택 다이얼로그"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            '배터리 로그 파일 선택',
+            '',
+            'Log files (*.log *.txt *.csv);;All files (*.*)'
+        )
+        
+        if file_path:
+            # 기존 데이터 초기화
+            self.multiple_data.clear()
+            self.file_path = file_path  # 단일 파일 경로 설정
+            self.file_paths = [file_path]
+            self.selected_files = [file_path]
+            self.comparison_mode = False
+            self.comparison_mode_check.setChecked(False)
+            
+            # UI 업데이트
+            self.file_info_label.setText(f'선택된 파일: {os.path.basename(file_path)}')
+            self.analyze_btn.setEnabled(True)
+            self.statusBar().showMessage(f'파일 선택됨: {os.path.basename(file_path)}')
+            self.update_file_list_display()
+    
+    def select_multiple_files(self):
+        """다중 파일 선택 다이얼로그"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, 
+            '배터리 로그 파일들 선택 (비교 분석용)',
+            '',
+            'Log files (*.log *.txt *.csv);;All files (*.*)'
+        )
+        
+        if file_paths:
+            self.file_paths = file_paths
+            self.selected_files = file_paths.copy()
+            self.comparison_mode = True
+            self.comparison_mode_check.setChecked(True)
+            
+            # UI 업데이트
+            file_count = len(file_paths)
+            self.file_info_label.setText(f'선택된 파일: {file_count}개')
+            self.analyze_btn.setEnabled(True)
+            self.statusBar().showMessage(f'{file_count}개 파일 선택됨 - 비교 모드 활성화')
+            self.update_file_list_display()
+    
+    def update_file_list_display(self):
+        """파일 목록 표시 업데이트"""
+        # 기존 위젯들 제거
+        layout = self.file_list_widget.layout()
+        for i in reversed(range(layout.count())):
+            child = layout.takeAt(i).widget()
+            if child:
+                child.setParent(None)
+        
+        # 파일별 체크박스와 정보 추가
+        for i, file_path in enumerate(self.file_paths):
+            file_widget = QWidget()
+            file_layout = QHBoxLayout(file_widget)
+            file_layout.setContentsMargins(5, 2, 5, 2)
+            
+            # 체크박스
+            checkbox = QCheckBox()
+            checkbox.setChecked(file_path in self.selected_files)
+            checkbox.toggled.connect(lambda checked, path=file_path: self.toggle_file_selection(path, checked))
+            file_layout.addWidget(checkbox)
+            
+            # 파일명 라벨
+            filename = os.path.basename(file_path)
+            file_label = QLabel(filename)
+            file_label.setToolTip(file_path)
+            
+            # 파일별 색상 표시 (최대 10개 파일)
+            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', 
+                     '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43']
+            if i < len(colors):
+                color = colors[i]
+                file_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+            
+            file_layout.addWidget(file_label)
+            file_layout.addStretch()
+            
+            # 제거 버튼
+            remove_btn = QPushButton('×')
+            remove_btn.setMaximumSize(20, 20)
+            remove_btn.clicked.connect(lambda _, path=file_path: self.remove_file(path))
+            file_layout.addWidget(remove_btn)
+            
+            layout.addWidget(file_widget)
+        
+        # 빈 공간 추가
+        layout.addStretch()
+    
+    def toggle_file_selection(self, file_path, checked):
+        """파일 선택/해제 토글"""
+        if checked and file_path not in self.selected_files:
+            self.selected_files.append(file_path)
+        elif not checked and file_path in self.selected_files:
+            self.selected_files.remove(file_path)
+        
+        # 분석 버튼 상태 업데이트
+        self.analyze_btn.setEnabled(len(self.selected_files) > 0)
+        
+        # 상태바 업데이트
+        selected_count = len(self.selected_files)
+        total_count = len(self.file_paths)
+        self.statusBar().showMessage(f'선택된 파일: {selected_count}/{total_count}개')
+    
+    def remove_file(self, file_path):
+        """파일 목록에서 제거"""
+        if file_path in self.file_paths:
+            self.file_paths.remove(file_path)
+        if file_path in self.selected_files:
+            self.selected_files.remove(file_path)
+        
+        # 다중 데이터에서도 제거
+        filename = os.path.basename(file_path)
+        if filename in self.multiple_data:
+            del self.multiple_data[filename]
+        
+        # UI 업데이트
+        self.update_file_list_display()
+        
+        # 파일이 없으면 분석 버튼 비활성화
+        if len(self.file_paths) == 0:
+            self.analyze_btn.setEnabled(False)
+            self.file_info_label.setText('선택된 파일: 없음')
+            self.comparison_mode = False
+            self.comparison_mode_check.setChecked(False)
+        else:
+            file_count = len(self.file_paths)
+            self.file_info_label.setText(f'선택된 파일: {file_count}개')
+    
+    def toggle_comparison_mode(self, checked):
+        """비교 모드 토글"""
+        self.comparison_mode = checked
+        
+        if checked:
+            # 비교 모드 활성화
+            if len(self.file_paths) == 1:
+                # 단일 파일인 경우 다중 파일 선택 권유
+                reply = QMessageBox.question(
+                    self, '비교 모드', 
+                    '비교 모드를 사용하려면 여러 파일이 필요합니다.\n'
+                    '추가 파일을 선택하시겠습니까?',
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    self.select_multiple_files()
+                else:
+                    self.comparison_mode_check.setChecked(False)
+                    self.comparison_mode = False
+                    return
+            
+            # 그래프 타입을 시계열로 고정하고 비활성화
+            self.graph_type_combo.setCurrentText('시계열')
+            self.graph_type_combo.setEnabled(False)
+        else:
+            # 비교 모드 비활성화
+            self.graph_type_combo.setEnabled(True)
+        
+        # 데이터가 있으면 그래프 업데이트
+        if self.data is not None or self.multiple_data:
+            self.update_all_graphs()
+    
+    def auto_adjust_battery_range(self):
+        """데이터에 따른 배터리 범위 자동 조정"""
+        if self.data is None or len(self.data) == 0:
+            return
+        
+        min_voltage = self.data['battery'].min()
+        max_voltage = self.data['battery'].max()
+        voltage_range = max_voltage - min_voltage
+        
+        # 여유분을 두고 범위 설정
+        range_margin = voltage_range * 0.1  # 10% 여유분
+        
+        adjusted_min = max(0, min_voltage - range_margin)
+        adjusted_max = max_voltage + range_margin
+        
+        # 스핀박스 값 업데이트
+        self.battery_min_spin.setValue(adjusted_min)
+        self.battery_max_spin.setValue(adjusted_max)
+        
+        # OnBoard 로그인지 확인하여 메시지 표시
+        is_onboard = 'source' in self.data.columns and self.data['source'].iloc[0] == 'onboard_monitor'
+        if is_onboard:
+            self.statusBar().showMessage(
+                f'OnBoard 모니터 로그 감지 - 전압 범위: {min_voltage:.2f}V ~ {max_voltage:.2f}V'
+            )
+        else:
+            self.statusBar().showMessage(
+                f'일반 배터리 로그 - 전압 범위: {min_voltage:.2f}V ~ {max_voltage:.2f}V'
+            )
+    
+    def update_data_info_multiple(self):
+        """다중 파일 데이터 정보 업데이트"""
+        if not self.multiple_data:
+            return
+        
+        info_text = "=== 다중 파일 비교 분석 ===\n\n"
+        
+        total_points = 0
+        earliest_time = None
+        latest_time = None
+        
+        for filename, file_info in self.multiple_data.items():
+            data = file_info['data']
+            total_points += len(data)
+            
+            file_earliest = data['timestamp'].min()
+            file_latest = data['timestamp'].max()
+            
+            if earliest_time is None or file_earliest < earliest_time:
+                earliest_time = file_earliest
+            if latest_time is None or file_latest > latest_time:
+                latest_time = file_latest
+            
+            info_text += f"📄 {filename}\n"
+            info_text += f"   데이터 포인트: {len(data):,}개\n"
+            info_text += f"   전압 범위: {data['battery'].min():.2f}V ~ {data['battery'].max():.2f}V\n"
+            info_text += f"   평균 전압: {data['battery'].mean():.2f}V\n"
+            info_text += f"   시간 범위: {file_earliest} ~ {file_latest}\n\n"
+        
+        info_text += f"📊 전체 요약:\n"
+        info_text += f"   총 파일 수: {len(self.multiple_data)}개\n"
+        info_text += f"   총 데이터 포인트: {total_points:,}개\n"
+        info_text += f"   전체 시간 범위: {earliest_time} ~ {latest_time}\n"
+        
+        self.data_info_text.setText(info_text)
+    
+    def update_all_graphs_comparison(self):
+        """비교 모드 그래프 업데이트"""
+        if not self.multiple_data:
+            return
+        
+        # 비교 모드에서는 그래프 타입을 시계열로 고정
+        self.graph_type_combo.setCurrentText('시계열')
+        self.graph_type_combo.setEnabled(False)  # 비교 모드에서는 비활성화
+        
+        # 기존 그래프 지우기 - 정의된 figure들만 사용
+        self.main_figure.clear()
+        self.detail_figure.clear()
+        self.performance_figure.clear()
+        
+        # 비교 그래프 생성
+        self.create_comparison_time_series()
+        self.create_comparison_detail_analysis()
+        self.create_comparison_performance()
+        
+        # 캔버스 새로고침
+        self.main_canvas.draw()
+        self.detail_canvas.draw()
+        self.performance_canvas.draw()
+    
+    def create_comparison_time_series(self):
+        """비교 모드 시계열 그래프"""
+        ax = self.main_figure.add_subplot(111)
+        
+        # 파일별 색상 지정
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', 
+                 '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43']
+        
+        time_option = self.time_display_combo.currentText()
+        
+        for i, (filename, file_info) in enumerate(self.multiple_data.items()):
+            # 선택된 파일만 표시
+            if filename not in [os.path.basename(path) for path in self.selected_files]:
+                continue
+                
+            data = file_info['data']
+            color = colors[i % len(colors)]
+            
+            # 시간 축 변환
+            if time_option == '절대시간':
+                x_data = data['timestamp']
+                x_label = '시간'
+            elif time_option == '상대시간(시작점 기준)':
+                start_time = data['timestamp'].min()
+                x_data = (data['timestamp'] - start_time).dt.total_seconds()
+                x_label = '상대시간 (초)'
+            elif time_option == '경과시간(분)':
+                start_time = data['timestamp'].min()
+                x_data = (data['timestamp'] - start_time).dt.total_seconds() / 60
+                x_label = '경과시간 (분)'
+            elif time_option == '경과시간(시간)':
+                start_time = data['timestamp'].min()
+                x_data = (data['timestamp'] - start_time).dt.total_seconds() / 3600
+                x_label = '경과시간 (시간)'
+            else:
+                x_data = data['timestamp']
+                x_label = '시간'
+            
+            # 플롯 그리기
+            ax.plot(x_data, data['battery'], color=color, alpha=0.7, 
+                   linewidth=1.5, label=filename)
+        
+        ax.set_xlabel(x_label, fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.set_ylabel('배터리 전압 (V)', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.set_title('배터리 전압 비교 - 시계열', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', prop={'family': self.korean_font if self.korean_font else 'sans-serif'})
+        ax.grid(True, alpha=0.3)
+        
+        # 시간 축 포맷팅
+        if time_option == '절대시간':
+            import matplotlib.dates as mdates
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            ax.tick_params(axis='x', rotation=45)
+        
+        self.main_figure.tight_layout()
+    
+    def create_comparison_detail_analysis(self):
+        """비교 모드 상세 분석 (히스토그램 + 박스플롯)"""
+        # 2x1 서브플롯으로 히스토그램과 박스플롯을 함께 표시
+        axes = self.detail_figure.subplots(2, 1)
+        
+        # 히스토그램
+        self.create_comparison_histogram_in_subplot(axes[0])
+        
+        # 박스플롯
+        self.create_comparison_box_plot_in_subplot(axes[1])
+        
+        self.detail_figure.tight_layout()
+    
+    def create_comparison_histogram_in_subplot(self, ax):
+        """비교 모드 히스토그램 (서브플롯용)"""
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', 
+                 '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43']
+        
+        # 선택된 파일들의 전압 데이터 수집
+        selected_data = {}
+        all_voltages = []
+        
+        for i, (filename, file_info) in enumerate(self.multiple_data.items()):
+            if filename in [os.path.basename(path) for path in self.selected_files]:
+                selected_data[filename] = {
+                    'data': file_info['data'],
+                    'color': colors[i % len(colors)]
+                }
+                all_voltages.extend(file_info['data']['battery'].tolist())
+        
+        if not all_voltages:
+            ax.text(0.5, 0.5, '선택된 파일이 없습니다', 
+                   transform=ax.transAxes, ha='center', va='center',
+                   fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+            return
+        
+        # 전체 범위 기준으로 bins 설정
+        bins = np.linspace(min(all_voltages), max(all_voltages), 30)
+        
+        for filename, file_data in selected_data.items():
+            data = file_data['data']
+            color = file_data['color']
+            
+            ax.hist(data['battery'], bins=bins, alpha=0.6, color=color, 
+                   label=filename, edgecolor='black', linewidth=0.5)
+        
+        ax.set_xlabel('배터리 전압 (V)', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.set_ylabel('빈도', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.set_title('배터리 전압 분포 비교', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.legend(prop={'family': self.korean_font if self.korean_font else 'sans-serif'})
+        ax.grid(True, alpha=0.3)
+    
+    def create_comparison_box_plot_in_subplot(self, ax):
+        """비교 모드 박스플롯 (서브플롯용)"""
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', 
+                 '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43']
+        
+        voltages_list = []
+        labels = []
+        color_list = []
+        
+        for i, (filename, file_info) in enumerate(self.multiple_data.items()):
+            if filename in [os.path.basename(path) for path in self.selected_files]:
+                voltages_list.append(file_info['data']['battery'].values)
+                labels.append(filename)
+                color_list.append(colors[i % len(colors)])
+        
+        if not voltages_list:
+            ax.text(0.5, 0.5, '선택된 파일이 없습니다', 
+                   transform=ax.transAxes, ha='center', va='center',
+                   fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+            return
+        
+        bp = ax.boxplot(voltages_list, labels=labels, patch_artist=True)
+        
+        # 색상 적용
+        for i, patch in enumerate(bp['boxes']):
+            if i < len(color_list):
+                patch.set_facecolor(color_list[i])
+                patch.set_alpha(0.7)
+        
+        ax.set_ylabel('배터리 전압 (V)', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.set_title('배터리 전압 분포 비교 (박스플롯)', fontfamily=self.korean_font if self.korean_font else 'sans-serif')
+        ax.tick_params(axis='x', rotation=45)
+        ax.grid(True, alpha=0.3)
+    
+    def create_comparison_performance(self):
+        """비교 모드 성능 지표 (통계 테이블)"""
+        ax = self.performance_figure.add_subplot(111)
+        ax.axis('off')
+        
+        stats_text = "=== 다중 파일 통계 비교 ===\n\n"
+        
+        # 테이블 헤더
+        stats_text += f"{'파일명':<20} {'평균(V)':<8} {'표준편차':<8} {'최소값':<8} {'최대값':<8} {'범위(V)':<8} {'데이터수':<8}\n"
+        stats_text += "-" * 85 + "\n"
+        
+        for filename, file_info in self.multiple_data.items():
+            if filename in [os.path.basename(path) for path in self.selected_files]:
+                data = file_info['data']
+                
+                # 파일명 축약 (20자 제한)
+                short_name = filename[:17] + "..." if len(filename) > 20 else filename
+                
+                stats_text += f"{short_name:<20} "
+                stats_text += f"{data['battery'].mean():<8.3f} "
+                stats_text += f"{data['battery'].std():<8.3f} "
+                stats_text += f"{data['battery'].min():<8.3f} "
+                stats_text += f"{data['battery'].max():<8.3f} "
+                stats_text += f"{data['battery'].max() - data['battery'].min():<8.3f} "
+                stats_text += f"{len(data):<8,}\n"
+        
+        # 전체 요약
+        if len(self.selected_files) > 1:
+            stats_text += "\n" + "=" * 85 + "\n"
+            stats_text += "전체 요약:\n"
+            
+            all_selected_data = []
+            total_points = 0
+            
+            for filename, file_info in self.multiple_data.items():
+                if filename in [os.path.basename(path) for path in self.selected_files]:
+                    all_selected_data.extend(file_info['data']['battery'].tolist())
+                    total_points += len(file_info['data'])
+            
+            if all_selected_data:
+                import numpy as np
+                all_data = np.array(all_selected_data)
+                stats_text += f"• 전체 평균: {all_data.mean():.3f}V\n"
+                stats_text += f"• 전체 표준편차: {all_data.std():.3f}V\n"
+                stats_text += f"• 전체 범위: {all_data.min():.3f}V ~ {all_data.max():.3f}V\n"
+                stats_text += f"• 총 데이터 포인트: {total_points:,}개\n"
+                stats_text += f"• 선택된 파일 수: {len(self.selected_files)}개\n"
+        
+        # 한글 폰트 명시적 설정
+        font_props = {
+            'fontfamily': self.korean_font if self.korean_font else 'DejaVu Sans',
+            'fontsize': 10
+        }
+        
+        ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', **font_props)
+        
+        self.performance_figure.tight_layout()
+    
+    def create_comparison_histogram(self):
+        """기존 히스토그램 메서드 - 더 이상 사용하지 않음"""
+        # 호환성을 위해 유지하지만 detail_analysis로 통합됨
+        pass
+    
+    def create_comparison_box_plot(self):
+        """기존 박스플롯 메서드 - 더 이상 사용하지 않음"""
+        # 호환성을 위해 유지하지만 detail_analysis로 통합됨
+        pass
+    
+    def create_comparison_statistics(self):
+        """기존 통계 메서드 - 더 이상 사용하지 않음"""
+        # 호환성을 위해 유지하지만 performance로 통합됨
+        pass
+    
+    def update_statistics_comparison(self):
+        """비교 모드 통계 업데이트"""
+        if not self.multiple_data:
+            return
+        
+        # 왼쪽 패널의 다양한 위젯들 업데이트는 기존 단일 파일 모드와 동일하게 처리
+        # 첫 번째 파일의 데이터를 기준으로 표시
+        first_filename = list(self.multiple_data.keys())[0]
+        first_data = self.multiple_data[first_filename]['data']
+        
+        # 기존 통계 업데이트 메서드 호출
+        self.update_statistics()
 
 def main():
     """메인 함수"""

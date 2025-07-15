@@ -1,0 +1,40 @@
+[
+  {
+    "timestamp": "2025-07-15 11:51:27",
+    "method": "DC_Load_Method",
+    "v_ocv": 25.07,
+    "v_load": 24.56,
+    "r_load": 10.0,
+    "i_measured": 2.43,
+    "stabilization_time": 15.0,
+    "r_internal": 0.20987654320987717,
+    "i_load": 2.43,
+    "v_drop": 0.5100000000000016,
+    "load_power": 59.6808,
+    "power_loss": 1.2393000000000038,
+    "total_power": 60.920100000000005,
+    "efficiency": 97.96569605105702,
+    "cell_count": 6,
+    "battery_type": "Li-ion_6S",
+    "current_source": "measured"
+  },
+  {
+    "timestamp": "2025-07-15 11:52:15",
+    "method": "DC_Load_Method",
+    "v_ocv": 25.0,
+    "v_load": 24.0,
+    "r_load": 5.0,
+    "i_measured": 4.78,
+    "stabilization_time": 15.0,
+    "r_internal": 0.20920502092050208,
+    "i_load": 4.78,
+    "v_drop": 1.0,
+    "load_power": 114.72,
+    "power_loss": 4.78,
+    "total_power": 119.5,
+    "efficiency": 96.0,
+    "cell_count": 6,
+    "battery_type": "Li-ion_6S",
+    "current_source": "measured"
+  }
+]

@@ -489,7 +489,6 @@ void StartAdcTask(void *argument)
     // 최종 필터링된 값을 VBat_ADC_Value에 저장
     Adc_State.VBat_ADC_Value = Adc_State.VBat_Filtered;
 
-
     // 간단한 LED 상태 판단 LOW(1500~2050) MIDDLE(2050~2500) HIGH(2500~4095) 0630 기준
     // LOW 1.5V(1900) , MIDDLE 1.77V(2200) , HIGH 2.4V(3000)
     Adc_State.LED1_State = (Adc_State.LED1_ADC_Value < LED_LOW_MAX && Adc_State.LED1_ADC_Value > LED_LOW_MIN) ? LED_STATE_LOW : (Adc_State.LED1_ADC_Value >= LED_HIGH_MIN && Adc_State.LED1_ADC_Value <= LED_HIGH_MAX) ? LED_STATE_HIGH
@@ -537,7 +536,6 @@ void StartAdcTask(void *argument)
     {
       last_button_state = Button_State.is_Start_Timer;
     }
-
 
     // 타이머 실행 시 차단 상태에서는 0% 출력, 아니면 현재 PWM 듀티 출력
     uint16_t pwm_duty = Button_State.is_Start_Timer ? (Adc_State.Cut_Off_PWM ? DUTY_0 : Adc_State.Current_PWM_Duty) : DUTY_0;
@@ -628,7 +626,6 @@ void StartDisplayTask(void *argument)
       current_status.warning_status = 0;
     }
 
-    
     // 배터리 전압 기반 PWM 차단 로직, 배터리 전압 경고시 PWM 차단
     if (current_status.warning_status == 1)
     {
@@ -787,39 +784,14 @@ void StartButtonTask(void *argument)
         uint32_t current_time = Button_State.Button_Current_Time;
         uint32_t time_since_last_click = current_time - Button_State.last_click_time;
 
-        // 더블 클릭 간격: 500ms 이내 && 이전 클릭이 있었을 때
-        if (Button_State.last_click_time > 0 &&
-            time_since_last_click <= (500 / portTICK_PERIOD_MS))
+        if (Button_State.last_click_time == 0 || time_since_last_click > (100 / portTICK_PERIOD_MS))
         {
-          // 더블 클릭 감지됨
-          Button_State.double_click_detected = true;
-          Button_State.pending_single_click = false; // 대기 중인 단일클릭 취소
-          Button_State.click_count = 0;
-
-          // 더블 클릭 시 배터리 표시 토글 (STANDBY 상태에서만)
-          if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
-          {
-            Button_State.show_battery_voltage = !Button_State.show_battery_voltage;
-          }
-
-          // 더블클릭 처리 완료 후 즉시 플래그 리셋 및 last_click_time 초기화
-          Button_State.double_click_detected = false;
-          Button_State.last_click_time = 0; // 다음 클릭을 새로운 시작으로 처리
-        }
-        else
-        {
-          // 첫 번째 클릭 또는 간격이 너무 긴 클릭
-          // 이전 더블클릭과 충분한 간격이 있는지 확인
-          if (Button_State.last_click_time == 0 || time_since_last_click > (500 / portTICK_PERIOD_MS))
-          {
-            // 단일클릭으로 처리하되 500ms 지연 후 실행
-            Button_State.pending_single_click = true;
-            Button_State.single_click_time = current_time;
-            Button_State.single_click_duration = Button_State.Button_Press_Duration;
-            Button_State.last_click_time = current_time;
-            Button_State.click_count = 1;
-            Button_State.double_click_detected = false; // 새로운 클릭 시퀀스 시작
-          }
+          Button_State.pending_single_click = true;
+          Button_State.single_click_time = current_time;
+          Button_State.single_click_duration = Button_State.Button_Press_Duration;
+          Button_State.last_click_time = current_time;
+          Button_State.click_count = 1;
+          Button_State.double_click_detected = false; // 새로운 클릭 시퀀스 시작
         }
       }
     }
