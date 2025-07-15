@@ -542,6 +542,16 @@ void StartAdcTask(void *argument)
 
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_duty);
 
+    uint8_t out_dc_en = HAL_GPIO_ReadPin(OUT_DC_EN_GPIO_Port, OUT_DC_EN_Pin);
+    if (Adc_State.Cut_Off_PWM && out_dc_en != GPIO_PIN_RESET)
+    {
+      HAL_GPIO_WritePin(OUT_DC_EN_GPIO_Port, OUT_DC_EN_Pin, GPIO_PIN_RESET);
+    }
+    else if (!Adc_State.Cut_Off_PWM && out_dc_en != GPIO_PIN_SET)
+    {
+      HAL_GPIO_WritePin(OUT_DC_EN_GPIO_Port, OUT_DC_EN_Pin, GPIO_PIN_SET);
+    }
+
     vTaskDelayUntil(&lastWakeTime, 20 * portTICK_PERIOD_MS);
   }
   /* USER CODE END StartAdcTask */
@@ -608,6 +618,10 @@ void StartDisplayTask(void *argument)
       else if (Button_State.is_Start_Timer)
       {
         current_status.timer_status = TIMER_STATUS_RUNNING;
+      }
+      else if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY)
+      {
+        current_status.timer_status = TIMER_STATUS_STANDBY;
       }
     }
     else if (current_status.warning_status != 0)

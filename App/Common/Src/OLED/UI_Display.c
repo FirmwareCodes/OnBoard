@@ -577,7 +577,7 @@ void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, ui
 
     // 깜빡임 효과: 20프레임마다 토글 (50ms * 20 = 1초 주기)
     uint8_t show_text = 1;
-    if (should_blink && ((blink_counter / 20) % 2 == 0))
+    if (should_blink && ((blink_counter / 10) % 2 == 0))
     {
         show_text = 0; // 숨김
     }

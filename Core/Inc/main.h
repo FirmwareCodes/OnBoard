@@ -224,6 +224,9 @@ typedef struct
 #define System_LED_Pin GPIO_PIN_9
 #define System_LED_GPIO_Port GPIOB
 
+#define OUT_DC_EN_Pin GPIO_PIN_14
+#define OUT_DC_EN_GPIO_Port GPIOC
+
 #define DUTY_100 800
 #define DUTY_50 400
 #define DUTY_5 40
