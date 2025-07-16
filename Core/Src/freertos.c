@@ -574,16 +574,11 @@ void StartDisplayTask(void *argument)
   // UI 시스템 초기화 (메인에서 기본 초기화가 완료된 후)
   UI_Init();
 
-  // 초기 화면 안정화를 위한 딜레이
-  osDelay(200);
-
-  // 시스템 시작 후 첫 번째 배터리 전압 측정 대기
   osDelay(500);
 
   // 첫 번째 전압 측정 및 초기 애니메이션 시작
-  float initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
   Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
-  initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
+  float initial_voltage = Battery_Get_Voltage(&Battery_Monitor);
 
   // 초기 애니메이션 시작
   UI_StartInitAnimation(&current_status, initial_voltage);
@@ -595,14 +590,11 @@ void StartDisplayTask(void *argument)
     current_status.progress_update_counter++;
     current_status.blink_counter++;
 
-    // 새로운 배터리 모니터링 시스템 사용 (보정 로직 제거)
-    float battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
-
     // 배터리 모니터 업데이트 (보정 없이 실측값만 사용)
     Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
 
     // 업데이트된 배터리 전압 사용
-    battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
+    float battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
 
     // 타이머 상태 결정
     if (current_status.warning_status == 0)
@@ -629,6 +621,7 @@ void StartDisplayTask(void *argument)
       current_status.timer_status = TIMER_STATUS_WARNING;
     }
 
+    // 배터리 전압 기반 경고 상태 처리
     if (Battery_Get_Voltage(&Battery_Monitor) < 18.50f && current_status.warning_status == 0)
     {
       current_status.timer_status = TIMER_STATUS_WARNING;
@@ -662,7 +655,7 @@ void StartDisplayTask(void *argument)
       current_status.timer_indicator_blink = 0;
     }
 
-    // 타이머 시간 설정 (다운카운트 지원)
+    // 타이머 시간 설정 (다운카운트)
     uint8_t timer_minutes = 0;
     uint8_t timer_seconds = 0;
 

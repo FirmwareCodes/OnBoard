@@ -459,13 +459,13 @@ void UI_DrawTimerIndicator(uint8_t show)
  */
 void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
 {
-    // 영역 경계선 그리기 (선택사항)
+    // 영역 경계선 그리기 (현재 사용안함-검정)
     Paint_DrawLine(LEFT_AREA_WIDTH, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
     // 전압 기반 프로그래스바 그리기 (애니메이션 지원)
     UI_DrawVoltageProgress(voltage, status);
 
-    // 배터리 전압 그리기 (애니메이션 중에는 애니메이션 전압 표시)
+    // 배터리 전압 그리기
     float display_voltage = status->init_animation_active ? status->animation_voltage : voltage;
     UI_DrawBatteryVoltage(display_voltage);
 }
@@ -479,8 +479,8 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 {
     // 전압을 퍼센트로 변환 (19.0V = 0%, 24.7V = 100%)
     const float WARNING_VOLTAGE = 20.0f; // 경고 전압 임계값
-    const float MIN_VOLTAGE = 18.6f;
-    const float MAX_VOLTAGE = 24.0f;
+    const float MIN_VOLTAGE = 18.6f; // 프로그래스바 최소 전압
+    const float MAX_VOLTAGE = 24.0f; // 프로그래스바 최대 전압
 
     // 애니메이션 중이면 애니메이션 전압 사용, 아니면 실제 전압 사용
     float current_voltage = status->init_animation_active ? status->animation_voltage : voltage;
@@ -845,7 +845,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         }
     }
 
-    // 상태 아이콘 업데이트 (상태가 변경된 경우, 겹침 방지를 위해 항상 클리어 후 재그리기)
+    // 상태 아이콘 업데이트
     if (prev_timer_status != status->timer_status)
     {
         UI_DrawTimerStatus(status->timer_status);
@@ -877,6 +877,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     // 배터리 부족 경고
     if (status->battery_voltage < WARNING_BATTERY_VOLTAGE)
     {
+        // 20V 이하에서 1V씩 낮아질수록 깜박이는 주기가 빨라지도록 조정
         uint8_t interval = abs((int)status->battery_voltage - 16) + (status->battery_voltage < 16.0f ? 1 : 0);
         uint16_t update_interval = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS * interval / UI_UPDATE_INTERVAL_MS));
 
