@@ -503,7 +503,7 @@ static void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_
     Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
     // 큰 네모 배터리 그리기
-    uint16_t battery_width = 60;                              // 배터리 본체 너비
+    uint16_t battery_width = 55;                              // 배터리 본체 너비
     uint16_t battery_height = 35;                             // 배터리 본체 높이
     uint16_t battery_x = center_x - battery_width / 2;        // 배터리 X 시작점
     uint16_t battery_y = (center_y - battery_height / 2) - 5; // 배터리 Y 시작점
@@ -530,16 +530,20 @@ static void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_
                         COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
     // LOW BAT 텍스트 (배터리 내부에)
-    const char *low_text = "LOW BAT";
-    uint16_t text_x = battery_x + 4;   // 배터리 내부 중앙 정렬
-    uint16_t text_y1 = battery_y + 11; // 첫 번째 줄 (위쪽)
+    const char *low_text = "LOW";
+    const char *low_text2 = "BATTERY";
+    uint16_t text_x = battery_x + 14;   // 배터리 내부 중앙 정렬
+    uint16_t text_x2 = battery_x + 2; // 배터리 내부 중앙 정렬
+    uint16_t text_y1 = battery_y + 6; // 첫 번째 줄 (위쪽)
+    uint16_t text_y2 = battery_y + 18; // 두 번째 줄 (아래쪽)
 
     Paint_DrawString_EN(text_x, text_y1, low_text, &Font12, COLOR_WHITE, COLOR_BLACK);
+    Paint_DrawString_EN(text_x2, text_y2, low_text2, &Font12, COLOR_WHITE, COLOR_BLACK);
 
     // "Please Charge" 메시지 (배터리 아래)
     const char *charge_text1 = "Please Charge";
     uint16_t charge_x1 = 5;  // 중앙 정렬 (Please)
-    uint16_t charge_y1 = 55; // 배터리 바로 아래
+    uint16_t charge_y1 = 53; // 배터리 바로 아래
 
     Paint_DrawString_EN(charge_x1, charge_y1, charge_text1, &Font8, COLOR_WHITE, COLOR_BLACK);
 }
@@ -563,14 +567,25 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     {
         // 배터리 영역 전체 완전히 클리어 (좌측 96x64 영역)
         Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-
+        
         // LOW BAT 알람 표시 (빠른 깜빡임 - 0.5초 주기)
         uint8_t blink_state = (status->blink_counter / 10) % 2; // 0.5초 주기로 깜빡임
         draw_low_battery_alarm(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, blink_state);
         return;
     }
 
-    float voltage_percent = status->init_animation_active ? ((current_voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100.0f : status->battery_percentage;
+    // 점진적 변화를 위한 퍼센트 계산
+    float voltage_percent;
+    if (status->init_animation_active)
+    {
+        // 애니메이션 중에는 애니메이션 전압 기반 계산
+        voltage_percent = ((current_voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100.0f;
+    }
+    else
+    {
+        // 정상 상태에서는 부드럽게 변화하는 퍼센트 사용
+        voltage_percent = status->smooth_battery_percentage;
+    }
 
     // 범위 제한
     if (voltage_percent < 0.0f)
@@ -776,17 +791,18 @@ void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
         // 연결됨: 채워진 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 1);
 
+        // Dubug 용 인식을 점으로 표시 
         if (l2_status == LED_CONNECTED_2)
         {
-            Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y, INFO_L2_X - 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y, INFO_L2_X + 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y, INFO_L2_X - 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y, INFO_L2_X + 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
         }
         else
         {
-            Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y - 2, INFO_L2_X - 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y - 2, INFO_L2_X + 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y + 2, INFO_L2_X - 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y + 2, INFO_L2_X + 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y - 2, INFO_L2_X - 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y - 2, INFO_L2_X + 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y + 2, INFO_L2_X - 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y + 2, INFO_L2_X + 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
         }
 
         // Paint_DrawLine(INFO_L2_X, INFO_L2_Y - 10, INFO_L2_X, INFO_L2_Y - 7, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
@@ -862,6 +878,56 @@ void UI_StartInitAnimation(UI_Status_t *status, float target_voltage)
     status->animation_voltage = 18.6f; // 최소 전압부터 시작
     status->animation_counter = 0;
     status->battery_voltage = target_voltage; // 목표 전압 설정
+}
+
+/**
+ * @brief 점진적 프로그래스바 업데이트
+ * @param status: UI 상태 구조체
+ * @param current_percentage: 현재 실측 퍼센트
+ * @param target_percentage: 목표 퍼센트 (10초 평균)
+ */
+void UI_UpdateSmoothProgress(UI_Status_t *status, float current_percentage, float target_percentage)
+{
+    uint32_t current_time = HAL_GetTick();
+    
+    // 초기화 (처음 호출 시)
+    if (!status->smooth_progress_active)
+    {
+        status->smooth_battery_percentage = current_percentage;
+        status->target_battery_percentage = target_percentage;
+        status->last_smooth_update_time = current_time;
+        status->smooth_progress_active = 1;
+        return;
+    }
+    
+    // 목표값 업데이트 (10초 평균값이 변경된 경우)
+    status->target_battery_percentage = target_percentage;
+    
+    // 100ms마다 부드러운 변화 적용
+    if (current_time - status->last_smooth_update_time >= 100)
+    {
+        float difference = status->target_battery_percentage - status->smooth_battery_percentage;
+        
+        // 차이가 0.1% 이하면 즉시 목표값으로 설정
+        if (fabs(difference) <= 0.1f)
+        {
+            status->smooth_battery_percentage = status->target_battery_percentage;
+        }
+        else
+        {
+            // 점진적 변화 (차이의 5%씩 적용 - 약 3초에 걸쳐 변화)
+            float step = difference * 0.05f;
+            status->smooth_battery_percentage += step;
+            
+            // 범위 제한
+            if (status->smooth_battery_percentage < 0.0f)
+                status->smooth_battery_percentage = 0.0f;
+            if (status->smooth_battery_percentage > 100.0f)
+                status->smooth_battery_percentage = 100.0f;
+        }
+        
+        status->last_smooth_update_time = current_time;
+    }
 }
 
 /**

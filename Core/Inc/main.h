@@ -228,7 +228,7 @@ typedef struct
 #define CAM_ONOFF_GPIO_Port GPIOA
 
 #define DUTY_100 800
-#define DUTY_50 400
+#define DUTY_50 480
 #define DUTY_5 40
 #define DUTY_0 0
 
@@ -238,6 +238,9 @@ typedef struct
 #define LED_MIDDLE_MIN 2100
 #define LED_HIGH_MAX 4095
 #define LED_HIGH_MIN 2800
+
+#define SYSTEM_CUT_OFF_VOLTAGE 2625
+#define SYSTEM_RECOVERY_VOLTAGE 2660
 
 #define BATTERY_MAX 3720 //25.2V
 #define BATTERY_FULL 3640 

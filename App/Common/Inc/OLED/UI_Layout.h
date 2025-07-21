@@ -37,8 +37,8 @@
 #define BATTERY_AREA_HEIGHT 64
 
 // 배터리 원형 프로그래스 (좌측 영역 중앙)
-#define BATTERY_CENTER_X 37     // 96/2 = 48
-#define BATTERY_CENTER_Y 32     // 64/2 = 32
+#define BATTERY_CENTER_X 36
+#define BATTERY_CENTER_Y 30
 #define BATTERY_OUTER_RADIUS 33 // 더 큰 반지름
 #define BATTERY_INNER_RADIUS 20
 #define BATTERY_PROGRESS_WIDTH 8 // 더 두꺼운 프로그래스바
@@ -105,8 +105,8 @@ typedef enum
 typedef enum
 {
     LED_DISCONNECTED = 0, // 연결 안됨
-    LED_CONNECTED_2 = 1,     // 연결됨
-    LED_CONNECTED_4 = 2     // 연결됨
+    LED_CONNECTED_2 = 1,  // 연결됨
+    LED_CONNECTED_4 = 2   // 연결됨
 } LED_Connection_t;
 
 // UI 상태 구조체
@@ -118,21 +118,26 @@ typedef struct
     uint8_t timer_seconds;         // 설정된 타이머 초
     Timer_Status_t timer_status;   // 타이머 상태
     uint8_t warning_status;        // 경고 상태
-
     LED_Connection_t l1_connected; // L1 연결 상태
     LED_Connection_t l2_connected; // L2 연결 상태
     uint8_t cooling_seconds;       // 쿨링 남은 시간 (초)
 
-    // 성능 최적화를 위한 업데이트 제어
+    // 디스플레이 업데이트 관련
     uint32_t progress_update_counter; // 프로그래스바 업데이트 카운터
     uint32_t blink_counter;           // 깜빡임 카운터
-    uint8_t force_full_update;        // 전체 화면 강제 업데이트 플래그
-    uint8_t timer_indicator_blink;    // 타이머 실행 표시기 깜빡임 상태
-    
+    uint8_t force_full_update;        // 전체 업데이트 강제 플래그
+    uint8_t timer_indicator_blink;    // 타이머 실행 표시기 깜빡임
+
     // 초기 애니메이션 관련
-    uint8_t init_animation_active;    // 초기 애니메이션 활성 상태
-    float animation_voltage;          // 애니메이션용 전압 값
-    uint32_t animation_counter;       // 애니메이션 카운터
+    uint8_t init_animation_active; // 초기 애니메이션 활성 상태
+    float animation_voltage;       // 애니메이션용 전압
+    uint32_t animation_counter;    // 애니메이션 카운터
+
+    // 점진적 프로그래스바 변화 관련
+    float smooth_battery_percentage;  // 부드럽게 변화하는 배터리 퍼센트
+    float target_battery_percentage;  // 목표 배터리 퍼센트 (10초 평균)
+    uint32_t last_smooth_update_time; // 마지막 부드러운 업데이트 시간
+    uint8_t smooth_progress_active;   // 부드러운 진행 활성 상태
 } UI_Status_t;
 
 // 상태 아이콘 비트맵 (19x19) - 더 큰 아이콘
@@ -152,7 +157,7 @@ extern const unsigned char exclamation_12x16[];
 extern const unsigned char electric_12x16[];
 
 // V 전압 아이콘 비트맵들
-extern const unsigned char voltage_v_12x16[];          // 명확한 V 형태 12x16
+extern const unsigned char voltage_v_12x16[]; // 명확한 V 형태 12x16
 
 // 빈 아이콘 비트맵 (12x16)
 extern const unsigned char empty_12x16[];
@@ -178,6 +183,10 @@ void UI_DrawTimerIndicator(uint8_t show); // 타이머 실행 표시기 그리�
 // 초기 애니메이션 관련 함수
 void UI_StartInitAnimation(UI_Status_t *status, float target_voltage);
 uint8_t UI_UpdateInitAnimation(UI_Status_t *status);
+void UI_UpdateSmoothProgress(UI_Status_t *status, float current_percentage, float target_percentage);
+
+// 전체 화면 그리기 함수
+void UI_DrawFullScreen(UI_Status_t *status);
 
 // 우측 영역 - 정보 표시 함수
 void UI_DrawInfoArea(UI_Status_t *status);
@@ -194,6 +203,5 @@ void UI_DrawNumber(uint16_t x, uint16_t y, uint16_t number, uint16_t color);
 void UI_DrawColon(uint16_t x, uint16_t y, uint16_t color);
 void UI_DrawCircle(uint16_t x, uint16_t y, uint16_t radius, uint16_t color, uint8_t filled);
 void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color, uint8_t should_update);
-
 
 #endif

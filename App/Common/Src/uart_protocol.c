@@ -192,7 +192,8 @@ void UART_SendScreenData(void)
 /**
  * @brief 상태 정보 전송
  */
-__attribute__((optimize("O0"))) void UART_SendStatusData(void)
+/** __attribute__((optimize("O0"))) */
+void UART_SendStatusData(void)
 {
   // 뮤텍스 획득 (최대 100ms 대기)
   osStatus_t mutex_status = osMutexAcquire(UartMutexHandle, 100);

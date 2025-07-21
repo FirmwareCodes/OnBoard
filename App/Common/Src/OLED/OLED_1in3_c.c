@@ -123,6 +123,14 @@ static void OLED_InitReg(void)
     OLED_WriteReg(0xad); /*set charge pump enable*/
     OLED_WriteReg(0x8a); /*Set DC-DC enable (a=0:disable; a=1:enable) */
 }
+/********************************************************************************
+function:
+            LCD OFF
+********************************************************************************/
+void OLED_1in3_C_LCD_OFF(void)
+{
+    OLED_WriteReg(0xae);
+}
 
 /********************************************************************************
 function:
