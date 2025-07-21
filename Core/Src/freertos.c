@@ -622,12 +622,12 @@ void StartDisplayTask(void *argument)
     }
 
     // 배터리 전압 기반 경고 상태 처리
-    if (Battery_Get_Voltage(&Battery_Monitor) < 18.50f && current_status.warning_status == 0)
+    if (Battery_Get_Voltage(&Battery_Monitor) < CRITICAL_BATTERY_VOLTAGE && current_status.warning_status == 0)
     {
       current_status.timer_status = TIMER_STATUS_WARNING;
       current_status.warning_status = 1;
     }
-    else if (Battery_Get_Voltage(&Battery_Monitor) > 20.00f && current_status.warning_status != 0)
+    else if (Battery_Get_Voltage(&Battery_Monitor) > WARNING_BATTERY_VOLTAGE && current_status.warning_status != 0)
     {
       current_status.timer_status = TIMER_STATUS_STANDBY;
       current_status.warning_status = 0;

@@ -243,7 +243,8 @@ typedef struct
 #define BATTERY_FULL 3640 
 #define BATTERY_MIN 2740 //18.6V
 
-#define WARNING_BATTERY_VOLTAGE 20.0f
+#define WARNING_BATTERY_VOLTAGE 19.7f
+#define CRITICAL_BATTERY_VOLTAGE 18.6f  // LOW BAT 알람 표시 임계값
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */

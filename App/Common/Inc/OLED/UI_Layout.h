@@ -26,7 +26,7 @@
 #define BLINK_COUNTER_THRESHOLD (BLINK_INTERVAL_MS / UI_UPDATE_INTERVAL_MS) // 깜빡임 카운터 임계값
 
 // 메인 영역 분할
-#define LEFT_AREA_WIDTH 81  // 좌측 배터리 영역
+#define LEFT_AREA_WIDTH 80  // 좌측 배터리 영역
 #define RIGHT_AREA_WIDTH 32 // 우측 정보 영역
 #define AREA_HEIGHT 64
 
@@ -39,9 +39,9 @@
 // 배터리 원형 프로그래스 (좌측 영역 중앙)
 #define BATTERY_CENTER_X 37     // 96/2 = 48
 #define BATTERY_CENTER_Y 32     // 64/2 = 32
-#define BATTERY_OUTER_RADIUS 32 // 더 큰 반지름
-#define BATTERY_INNER_RADIUS 21
-#define BATTERY_PROGRESS_WIDTH 7 // 더 두꺼운 프로그래스바
+#define BATTERY_OUTER_RADIUS 33 // 더 큰 반지름
+#define BATTERY_INNER_RADIUS 20
+#define BATTERY_PROGRESS_WIDTH 8 // 더 두꺼운 프로그래스바
 
 // 배터리 퍼센트 텍스트 위치 (중앙)
 #define BATTERY_PERCENT_X BATTERY_CENTER_X
