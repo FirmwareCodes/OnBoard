@@ -132,26 +132,6 @@ float Battery_Get_Voltage(Battery_Monitor_t *monitor)
     return Battery_ADC_To_Voltage(monitor->filtered_voltage);
 }
 
-/**
- * @brief  10초 평균 배터리 전압 반환
- * @param  monitor: 배터리 모니터 구조체 포인터
- * @retval 10초 평균 배터리 전압 (V)
- */
-float Battery_Get_10Second_Average_Voltage(Battery_Monitor_t *monitor)
-{
-    return Battery_ADC_To_Voltage(monitor->ten_second_average);
-}
-
-/**
- * @brief  10초 평균 ADC 값 반환
- * @param  monitor: 배터리 모니터 구조체 포인터
- * @retval 10초 평균 ADC 값
- */
-uint16_t Battery_Get_10Second_Average_ADC(Battery_Monitor_t *monitor)
-{
-    return monitor->ten_second_average;
-}
-
 /* Function implementations --------------------------------------------------*/
 
 /**
@@ -175,7 +155,6 @@ void Battery_Monitor_Init(Battery_Monitor_t *monitor)
     monitor->last_update_time = current_time;
     monitor->last_flash_save_time = current_time;
     monitor->power_on_time = current_time;
-    monitor->ten_second_start_time = current_time;
 
     // 플래시에서 배터리 데이터 로드
     Battery_Load_From_Flash(monitor);
@@ -206,38 +185,6 @@ void Battery_Monitor_Update(Battery_Monitor_t *monitor, uint16_t raw_adc_value, 
 
     // 필터링된 전압 계산 (실측값만 사용)
     monitor->filtered_voltage = Battery_Filter_ADC_Samples(monitor);
-    
-    // 10초 평균값 계산을 위한 샘플링 (200ms 간격으로 샘플링)
-    if (current_time - monitor->ten_second_start_time >= TEN_SECOND_SAMPLE_PERIOD_MS)
-    {
-        // 필터링된 값을 10초 샘플 버퍼에 추가
-        monitor->ten_second_samples[monitor->ten_second_index] = monitor->filtered_voltage;
-        monitor->ten_second_index = (monitor->ten_second_index + 1) % 50; // 50개 샘플 (10초)
-        
-        if (!monitor->ten_second_buffer_full && monitor->ten_second_index == 0)
-        {
-            monitor->ten_second_buffer_full = true;
-        }
-        
-        // 10초 평균값 계산
-        uint32_t sum = 0;
-        uint8_t count = monitor->ten_second_buffer_full ? 50 : monitor->ten_second_index;
-        
-        if (count > 0)
-        {
-            for (uint8_t i = 0; i < count; i++)
-            {
-                sum += monitor->ten_second_samples[i];
-            }
-            monitor->ten_second_average = (uint16_t)(sum / count);
-        }
-        else
-        {
-            monitor->ten_second_average = monitor->filtered_voltage; // 초기값
-        }
-        
-        monitor->ten_second_start_time = current_time;
-    }
     
     // 표시용 전압도 동일한 실측값 사용
     monitor->display_voltage = monitor->filtered_voltage;

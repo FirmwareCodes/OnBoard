@@ -20,7 +20,7 @@
 #define SCREEN_HEIGHT 64
 
 // 성능 및 업데이트 주기 설정
-#define UI_UPDATE_INTERVAL_MS 50                                            // 메인 UI 업데이트 주기 (20fps)
+#define UI_UPDATE_INTERVAL_MS 50                                          // 메인 UI 업데이트 주기 (20fps)
 #define PROGRESS_UPDATE_INTERVAL_MS 250                                     // 프로그래스바 업데이트 주기 (5fps)
 #define BLINK_INTERVAL_MS 250                                               // 깜빡임 주기 (1초)
 #define BLINK_COUNTER_THRESHOLD (BLINK_INTERVAL_MS / UI_UPDATE_INTERVAL_MS) // 깜빡임 카운터 임계값
@@ -132,12 +132,6 @@ typedef struct
     uint8_t init_animation_active; // 초기 애니메이션 활성 상태
     float animation_voltage;       // 애니메이션용 전압
     uint32_t animation_counter;    // 애니메이션 카운터
-
-    // 점진적 프로그래스바 변화 관련
-    float smooth_battery_percentage;  // 부드럽게 변화하는 배터리 퍼센트
-    float target_battery_percentage;  // 목표 배터리 퍼센트 (10초 평균)
-    uint32_t last_smooth_update_time; // 마지막 부드러운 업데이트 시간
-    uint8_t smooth_progress_active;   // 부드러운 진행 활성 상태
 } UI_Status_t;
 
 // 상태 아이콘 비트맵 (19x19) - 더 큰 아이콘
@@ -183,7 +177,6 @@ void UI_DrawTimerIndicator(uint8_t show); // 타이머 실행 표시기 그리�
 // 초기 애니메이션 관련 함수
 void UI_StartInitAnimation(UI_Status_t *status, float target_voltage);
 uint8_t UI_UpdateInitAnimation(UI_Status_t *status);
-void UI_UpdateSmoothProgress(UI_Status_t *status, float current_percentage, float target_percentage);
 
 // 전체 화면 그리기 함수
 void UI_DrawFullScreen(UI_Status_t *status);

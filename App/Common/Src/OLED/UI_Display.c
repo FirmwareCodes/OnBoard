@@ -583,8 +583,8 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     }
     else
     {
-        // 정상 상태에서는 부드럽게 변화하는 퍼센트 사용
-        voltage_percent = status->smooth_battery_percentage;
+        // 폴백: 현재 실측 퍼센트 사용
+        voltage_percent = status->battery_percentage;
     }
 
     // 범위 제한
@@ -881,56 +881,6 @@ void UI_StartInitAnimation(UI_Status_t *status, float target_voltage)
 }
 
 /**
- * @brief 점진적 프로그래스바 업데이트
- * @param status: UI 상태 구조체
- * @param current_percentage: 현재 실측 퍼센트
- * @param target_percentage: 목표 퍼센트 (10초 평균)
- */
-void UI_UpdateSmoothProgress(UI_Status_t *status, float current_percentage, float target_percentage)
-{
-    uint32_t current_time = HAL_GetTick();
-    
-    // 초기화 (처음 호출 시)
-    if (!status->smooth_progress_active)
-    {
-        status->smooth_battery_percentage = current_percentage;
-        status->target_battery_percentage = target_percentage;
-        status->last_smooth_update_time = current_time;
-        status->smooth_progress_active = 1;
-        return;
-    }
-    
-    // 목표값 업데이트 (10초 평균값이 변경된 경우)
-    status->target_battery_percentage = target_percentage;
-    
-    // 100ms마다 부드러운 변화 적용
-    if (current_time - status->last_smooth_update_time >= 100)
-    {
-        float difference = status->target_battery_percentage - status->smooth_battery_percentage;
-        
-        // 차이가 0.1% 이하면 즉시 목표값으로 설정
-        if (fabs(difference) <= 0.1f)
-        {
-            status->smooth_battery_percentage = status->target_battery_percentage;
-        }
-        else
-        {
-            // 점진적 변화 (차이의 5%씩 적용 - 약 3초에 걸쳐 변화)
-            float step = difference * 0.05f;
-            status->smooth_battery_percentage += step;
-            
-            // 범위 제한
-            if (status->smooth_battery_percentage < 0.0f)
-                status->smooth_battery_percentage = 0.0f;
-            if (status->smooth_battery_percentage > 100.0f)
-                status->smooth_battery_percentage = 100.0f;
-        }
-        
-        status->last_smooth_update_time = current_time;
-    }
-}
-
-/**
  * @brief 전체 화면 그리기 (새로운 레이아웃)
  * @param status: UI 상태 구조체
  */
@@ -1051,32 +1001,6 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
         prev_l1_connected = status->l1_connected;
         prev_l2_connected = status->l2_connected;
     }
-
-    // 배터리 부족 경고 아이콘 위치
-    // uint16_t base_x = 62; // 중앙 정렬 조정
-    // uint16_t base_y = 2;  // 중앙 정렬 조정
-
-    // 배터리 부족 경고
-    // if (status->battery_voltage < WARNING_BATTERY_VOLTAGE)
-    // {
-    //     // 20V 이하에서 1V씩 낮아질수록 깜박이는 주기가 빨라지도록 조정
-    //     uint8_t interval = abs((int)status->battery_voltage - 16) + (status->battery_voltage < 16.0f ? 1 : 0);
-    //     uint16_t update_interval = (status->progress_update_counter % (PROGRESS_UPDATE_INTERVAL_MS * interval / UI_UPDATE_INTERVAL_MS));
-
-    //     // 느낌표 아이콘 그리기
-    //     if (update_interval == 0 || update_interval == 1)
-    //     {
-    //         UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_BLACK);
-    //     }
-    //     else
-    //     {
-    //         UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_WHITE);
-    //     }
-    // }
-    // else
-    // {
-    //     UI_DrawIcon12x16(base_x, base_y, electric_12x16, COLOR_BLACK);
-    // }
 
     // 배터리 전압 업데이트 (값이 변경된 경우이고 LOW BAT 상태가 아닐 때)
     if (prev_battery_voltage != status->battery_voltage)

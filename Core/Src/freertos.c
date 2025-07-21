@@ -613,22 +613,36 @@ void StartDisplayTask(void *argument)
       current_status.progress_update_counter++;
       current_status.blink_counter++;
 
-      // 배터리 모니터 업데이트 (보정 없이 실측값만 사용)
+      // 배터리 모니터 업데이트를 200ms마다만 실행 (성능 최적화)
+      // static uint8_t battery_update_counter = 0;
+      // static float cached_battery_percentage = 0.0f;
+      // battery_update_counter++;
+      
+      // if (battery_update_counter >= 4) // 50ms * 4 = 200ms
+      // {
+      //   Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
+        
+      //   // 배터리 퍼센트 캐싱 (200ms마다만 계산)
+      //   cached_battery_percentage = Battery_Get_Percentage_Float(&Battery_Monitor);
+        
+      //   // 10초 평균 퍼센트 계산 (배터리 업데이트 시에만)
+      //   float current_percentage = cached_battery_percentage;
+      //   float ten_sec_avg_percentage = Battery_Calculate_Percentage(Battery_Get_10Second_Average_ADC(&Battery_Monitor));
+        
+      //   // 점진적 프로그래스바 업데이트 (애니메이션 중이 아닐 때만)
+      //   if (!current_status.init_animation_active)
+      //   {
+      //     UI_UpdateSmoothProgress(&current_status, current_percentage, ten_sec_avg_percentage);
+      //   }
+        
+      //   battery_update_counter = 0;
+      // }
+
+      // 배터리 모니터 업데이트 (기존 방식으로 복원)
       Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
 
-      // 업데이트된 배터리 전압 사용
+      // 업데이트된 배터리 전압 사용 (캐시된 값 사용)
       float battery_voltage = Battery_Get_Voltage(&Battery_Monitor);
-
-      // 10초 평균 전압 및 퍼센트 가져오기
-      // float ten_sec_avg_voltage = Battery_Get_10Second_Average_Voltage(&Battery_Monitor);
-      float current_percentage = Battery_Get_Percentage_Float(&Battery_Monitor);
-      float ten_sec_avg_percentage = Battery_Calculate_Percentage(Battery_Get_10Second_Average_ADC(&Battery_Monitor));
-
-      // 점진적 프로그래스바 업데이트 (애니메이션 중이 아닐 때만)
-      if (!current_status.init_animation_active)
-      {
-        UI_UpdateSmoothProgress(&current_status, current_percentage, ten_sec_avg_percentage);
-      }
 
       // 타이머 상태 결정
       if (current_status.warning_status == 0)

@@ -17,8 +17,6 @@ uint8_t Battery_Get_Percentage_Integer(Battery_Monitor_t *monitor);
 float Battery_Get_Percentage_Float(Battery_Monitor_t *monitor);
 float Battery_ADC_To_Voltage(uint16_t adc_value);
 float Battery_Get_Voltage(Battery_Monitor_t *monitor);
-float Battery_Get_10Second_Average_Voltage(Battery_Monitor_t *monitor);  // 10초 평균 전압
-uint16_t Battery_Get_10Second_Average_ADC(Battery_Monitor_t *monitor);    // 10초 평균 ADC 값
 void Battery_Save_To_Flash(Battery_Monitor_t *monitor);
 void Battery_Load_From_Flash(Battery_Monitor_t *monitor);
 uint16_t Battery_Apply_Load_Compensation(uint16_t raw_adc, bool is_under_load, uint32_t time_since_load_change);

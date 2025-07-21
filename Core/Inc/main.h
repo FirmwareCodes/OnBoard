@@ -68,16 +68,9 @@ typedef struct
   uint8_t sample_buffer_full;                              // 샘플 버퍼 가득참 여부
   uint8_t min_voltage_buffer_full;                         // 최저 전압 버퍼 가득함 여부
   
-  // 10초 평균값 계산을 위한 필드들
-  uint16_t ten_second_samples[50];                         // 10초간 샘플 (20ms * 50 = 1초, 실제로는 500개 정도 필요하지만 메모리 절약)
-  uint8_t ten_second_index;                                // 10초 샘플 인덱스
-  uint8_t ten_second_buffer_full;                          // 10초 버퍼 가득참 여부
-  uint32_t ten_second_start_time;                          // 10초 측정 시작 시간
-  
   uint16_t filtered_voltage;                               // 일정 횟수 측정값을 평균 필터링된 전압 (ADC)
   uint16_t compensated_voltage;                            // 부하 보정된 전압 (ADC)
   uint16_t display_voltage;                                // 표시용 실측 전압 (ADC, 보정 적용 안함)
-  uint16_t ten_second_average;                             // 10초 평균값
   float battery_percentage;                                // 배터리 잔량 퍼센트 (소수점 2자리)
   float last_saved_percentage;                             // 마지막 저장된 퍼센트 (소수점 2자리)
   Battery_Status_t status;                                 // 배터리 상태
