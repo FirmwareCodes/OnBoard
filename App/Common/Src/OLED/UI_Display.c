@@ -532,9 +532,9 @@ static void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_
     // LOW BAT 텍스트 (배터리 내부에)
     const char *low_text = "LOW";
     const char *low_text2 = "BATTERY";
-    uint16_t text_x = battery_x + 14;   // 배터리 내부 중앙 정렬
-    uint16_t text_x2 = battery_x + 2; // 배터리 내부 중앙 정렬
-    uint16_t text_y1 = battery_y + 6; // 첫 번째 줄 (위쪽)
+    uint16_t text_x = battery_x + 14;  // 배터리 내부 중앙 정렬
+    uint16_t text_x2 = battery_x + 2;  // 배터리 내부 중앙 정렬
+    uint16_t text_y1 = battery_y + 6;  // 첫 번째 줄 (위쪽)
     uint16_t text_y2 = battery_y + 18; // 두 번째 줄 (아래쪽)
 
     Paint_DrawString_EN(text_x, text_y1, low_text, &Font12, COLOR_WHITE, COLOR_BLACK);
@@ -567,7 +567,7 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     {
         // 배터리 영역 전체 완전히 클리어 (좌측 96x64 영역)
         Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-        
+
         // LOW BAT 알람 표시 (빠른 깜빡임 - 0.5초 주기)
         uint8_t blink_state = (status->blink_counter / 10) % 2; // 0.5초 주기로 깜빡임
         draw_low_battery_alarm(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, blink_state);
@@ -595,7 +595,21 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 
     uint8_t progress = (uint8_t)voltage_percent;
 
-    // 경고 전압 이하일 때 빨간색(반전) 경고, 그 외에는 흰색
+    // 프로그래스바 상승에 둔감함 추가
+    if ((voltage_percent - status->last_battery_percentage) > 2)
+    {
+        status->last_battery_percentage = voltage_percent;
+    }
+    else if (voltage_percent < status->last_battery_percentage)
+    {
+        status->last_battery_percentage = voltage_percent;
+    }
+    else if (!status->init_animation_active && voltage_percent != 100)
+    {
+        progress = status->last_battery_percentage;
+    }
+
+    // 경고 전압 이하일 때 경고, 그 외에는 흰색
     uint16_t progress_color = (current_voltage < WARNING_BATTERY_VOLTAGE) ? COLOR_WHITE : COLOR_WHITE;
 
     // 원형 프로그래스바 그리기
@@ -606,16 +620,48 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     {
         // Paint_DrawLine(56, 21, 68, 15, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
         // Paint_DrawLine(55, 20, 68, 14, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(56, 19, 67, 8, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(56, 20, 67, 9, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(57, 20, 68, 9, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(57, 21, 68, 10, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(58, 21, 69, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(58, 22, 69, 11, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(56, 19, 65, 10, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(56, 20, 65, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(57, 20, 66, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(57, 21, 66, 12, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-        Paint_DrawLine(55, 18, 66, 7, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(55, 19, 66, 8, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(58, 21, 67, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(58, 22, 67, 13, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
+        Paint_DrawLine(55, 18, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        Paint_DrawLine(55, 19, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+        // 배터리 영역 전체 클리어
+        // Paint_DrawRectangle(69, 2, 76, 10, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+        // 배터리 경고 표시
+        if (current_voltage <= WARNING_BATTERY_VOLTAGE)
+        {
+            // 네모 배터리 그리기
+            uint16_t battery_width = 7;  // 배터리 본체 너비
+            uint16_t battery_height = 9; // 배터리 본체 높이
+            uint16_t battery_x = 69;     // 배터리 X 시작점
+            uint16_t battery_y = 3;      // 배터리 Y 시작점
+
+            // 배터리 양극 단자 크기
+            uint16_t terminal_width = 3;
+            uint16_t terminal_height = 2;
+            uint16_t terminal_x = (battery_x + battery_width / 2) - 1;
+            uint16_t terminal_y = battery_y - terminal_height;
+
+            // 배터리 본체 테두리 (단일 테두리로 단순화)
+            Paint_DrawRectangle(battery_x, battery_y,
+                                battery_x + battery_width, battery_y + battery_height,
+                                COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+
+            // 배터리 양극 단자 그리기
+            Paint_DrawRectangle(terminal_x, terminal_y,
+                                terminal_x + terminal_width, terminal_y + terminal_height,
+                                COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+            Paint_DrawRectangle(battery_x + 2, battery_y + battery_height - 3,
+                                battery_x + battery_width - 2, battery_y + battery_height - 1, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        }
         // Paint_DrawLine(59, 22, 70, 11, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
         // Paint_DrawLine(59, 23, 70, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     }
@@ -791,7 +837,7 @@ void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
         // 연결됨: 채워진 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 1);
 
-        // Dubug 용 인식을 점으로 표시 
+        // Dubug 용 인식을 점으로 표시
         if (l2_status == LED_CONNECTED_2)
         {
             // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y, INFO_L2_X - 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
