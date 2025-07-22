@@ -628,8 +628,8 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     Paint_DrawLine(57, 20, 66, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     Paint_DrawLine(57, 21, 66, 12, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-    Paint_DrawLine(58, 21, 67, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    Paint_DrawLine(58, 22, 67, 13, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(57, 22, 67, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(57, 23, 67, 13, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
     Paint_DrawLine(55, 18, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     Paint_DrawLine(55, 19, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
@@ -733,7 +733,7 @@ void UI_DrawInfoArea(UI_Status_t *status)
     UI_DrawTimerStatus(status->timer_status);
 
     // 4구역: LED 연결 상태 표시 (원형)
-    UI_DrawLEDStatus(status->l1_connected, status->l2_connected);
+    UI_DrawLEDStatus(status->timer_status, status->l1_connected, status->l2_connected);
 }
 
 /**
@@ -812,7 +812,7 @@ void UI_DrawTimerStatus(Timer_Status_t status)
  * @param l1_status: L1 연결 상태
  * @param l2_status: L2 연결 상태
  */
-void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
+void UI_DrawLEDStatus(Timer_Status_t status, LED_Connection_t l1_status, LED_Connection_t l2_status)
 {
     Paint_DrawRectangle(INFO_L1_X - INFO_L1_RADIUS, INFO_L1_Y - INFO_L1_RADIUS, INFO_L2_X + INFO_L2_RADIUS, INFO_L2_Y + INFO_L2_RADIUS, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
@@ -822,17 +822,20 @@ void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
         // 연결됨: 채워진 원형
         UI_DrawCircle(INFO_L1_X, INFO_L1_Y, INFO_L1_RADIUS, COLOR_WHITE, 1);
 
-        if (l1_status == LED_CONNECTED_2)
+        if (status == TIMER_STATUS_RUNNING)
         {
-            Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y, INFO_L1_X - 2, INFO_L1_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y, INFO_L1_X + 2, INFO_L1_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        }
-        else
-        {
-            Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y - 2, INFO_L1_X - 2, INFO_L1_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y - 2, INFO_L1_X + 2, INFO_L1_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y + 2, INFO_L1_X - 2, INFO_L1_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y + 2, INFO_L1_X + 2, INFO_L1_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            if (l1_status == LED_CONNECTED_2)
+            {
+                Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y, INFO_L1_X - 2, INFO_L1_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y, INFO_L1_X + 2, INFO_L1_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            }
+            else
+            {
+                Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y - 2, INFO_L1_X - 2, INFO_L1_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y - 2, INFO_L1_X + 2, INFO_L1_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L1_X - 2, INFO_L1_Y + 2, INFO_L1_X - 2, INFO_L1_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L1_X + 2, INFO_L1_Y + 2, INFO_L1_X + 2, INFO_L1_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            }
         }
     }
     else
@@ -847,20 +850,22 @@ void UI_DrawLEDStatus(LED_Connection_t l1_status, LED_Connection_t l2_status)
         // 연결됨: 채워진 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 1);
 
-        // Dubug 용 인식을 점으로 표시
-        if (l2_status == LED_CONNECTED_2)
+        if (status == TIMER_STATUS_RUNNING)
         {
-            // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y, INFO_L2_X - 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            // Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y, INFO_L2_X + 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            // Dubug 용 인식을 점으로 표시
+            if (l2_status == LED_CONNECTED_2)
+            {
+                Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y, INFO_L2_X - 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y, INFO_L2_X + 2, INFO_L2_Y, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            }
+            else
+            {
+                Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y - 2, INFO_L2_X - 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y - 2, INFO_L2_X + 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y + 2, INFO_L2_X - 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+                Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y + 2, INFO_L2_X + 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+            }
         }
-        else
-        {
-            // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y - 2, INFO_L2_X - 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            // Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y - 2, INFO_L2_X + 2, INFO_L2_Y - 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            // Paint_DrawLine(INFO_L2_X - 2, INFO_L2_Y + 2, INFO_L2_X - 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-            // Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y + 2, INFO_L2_X + 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        }
-
         // Paint_DrawLine(INFO_L2_X, INFO_L2_Y - 10, INFO_L2_X, INFO_L2_Y - 7, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
         // Paint_DrawLine(INFO_L2_X - 7, INFO_L2_Y - 8, INFO_L2_X - 6, INFO_L2_Y - 5, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
         // Paint_DrawLine(INFO_L2_X + 7, INFO_L2_Y - 8, INFO_L2_X + 6, INFO_L2_Y - 5, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
@@ -1053,7 +1058,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     // LED 상태 업데이트 (변경된 경우만)
     if (prev_l1_connected != status->l1_connected || prev_l2_connected != status->l2_connected)
     {
-        UI_DrawLEDStatus(status->l1_connected, status->l2_connected);
+        UI_DrawLEDStatus(status->timer_status, status->l1_connected, status->l2_connected);
         prev_l1_connected = status->l1_connected;
         prev_l2_connected = status->l2_connected;
     }

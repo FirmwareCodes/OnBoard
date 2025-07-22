@@ -993,11 +993,12 @@ void Callback01(void *argument)
 {
   /* USER CODE BEGIN Callback01 */
   UNUSED(argument);
-  if (Button_State.is_Start_Timer)
+  is_half_second_tick = !is_half_second_tick;
+  if (!is_half_second_tick)
   {
-    is_half_second_tick = !is_half_second_tick;
-    if (!is_half_second_tick)
+    if (Button_State.is_Start_Timer)
     {
+
       // 초 카운트다운
       if (Button_State.second_count > 0)
       {
@@ -1031,17 +1032,17 @@ void Callback01(void *argument)
         }
       }
     }
-  }
-  else if (!Button_State.is_Start_Timer)
-  {
-    if (Button_State.is_start_to_cooling)
+    else if (!Button_State.is_Start_Timer)
     {
-      Button_State.cooling_second--;
-      if (Button_State.cooling_second <= 0)
+      if (Button_State.is_start_to_cooling)
       {
-        Button_State.is_start_to_cooling = false;
-        osTimerStop(MainTimerHandle);
-        HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+        Button_State.cooling_second--;
+        if (Button_State.cooling_second <= 0)
+        {
+          Button_State.is_start_to_cooling = false;
+          osTimerStop(MainTimerHandle);
+          HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+        }
       }
     }
   }
