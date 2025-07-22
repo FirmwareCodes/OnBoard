@@ -974,6 +974,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
 {
     static float prev_battery_voltage = 0.0f; // 이전 배터리 전압값
     static Timer_Status_t prev_timer_status = TIMER_STATUS_STANDBY;
+    static bool is_changed_timer_status = false;
     static uint8_t prev_timer_minutes = 255;
     static uint8_t prev_timer_seconds = 255;
     static LED_Connection_t prev_l1_connected = LED_DISCONNECTED;
@@ -1041,6 +1042,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     // 상태 아이콘 업데이트
     if (prev_timer_status != status->timer_status)
     {
+        is_changed_timer_status = true;
         UI_DrawTimerStatus(status->timer_status);
 
         // 설정 모드에서 다른 상태로 변경될 때 타이머 값 강제 업데이트
@@ -1056,8 +1058,9 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     }
 
     // LED 상태 업데이트 (변경된 경우만)
-    if (prev_l1_connected != status->l1_connected || prev_l2_connected != status->l2_connected)
+    if (prev_l1_connected != status->l1_connected || prev_l2_connected != status->l2_connected || is_changed_timer_status)
     {
+        is_changed_timer_status = false;
         UI_DrawLEDStatus(status->timer_status, status->l1_connected, status->l2_connected);
         prev_l1_connected = status->l1_connected;
         prev_l2_connected = status->l2_connected;
