@@ -169,7 +169,15 @@ UI_Status_t current_status = {
     .timer_indicator_blink = 0, // 타이머 표시기 초기값
     .init_animation_active = 0, // 애니메이션 비활성 상태로 시작
     .animation_voltage = 19.0f,
-    .animation_counter = 0};
+    .animation_counter = 0,
+    .timer_toggle_switch = {// 토글 스위치 초기화
+                            .x = 0,
+                            .y = 0,
+                            .state = TOGGLE_STATE_OFF,
+                            .target_state = TOGGLE_STATE_OFF,
+                            .animation_step = 0,
+                            .last_update_time = 0,
+                            .is_animating = 0}};
 
 // 새로운 배터리 모니터링 시스템
 Battery_Monitor_t Battery_Monitor = {0};
@@ -230,11 +238,12 @@ void Timer_LoadFromFlash(void)
  */
 void Timer_SaveToFlash(uint32_t timer_value)
 {
-  HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
+  UNUSED(timer_value);
+  // HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
 
-  if (status != HAL_OK)
-  {
-  }
+  // if (status != HAL_OK)
+  // {
+  // }
 }
 
 /* USER CODE END Application */
@@ -613,6 +622,11 @@ void StartDisplayTask(void *argument)
   // 초기 애니메이션 시작
   UI_StartInitAnimation(&current_status, initial_voltage);
 
+  // 토글 스위치 초기화 (우측 영역 중앙에 위치)
+  uint16_t toggle_x = INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (TOGGLE_SWITCH_WIDTH / 2) - 1;
+  uint16_t toggle_y = INFO_STATUS_Y + 2;
+  UI_InitToggleSwitch(&current_status.timer_toggle_switch, toggle_x, toggle_y);
+
   /* Infinite loop */
   for (;;)
   {
@@ -764,7 +778,8 @@ void StartButtonTask(void *argument)
   /* Infinite loop */
   for (;;)
   {
-    if (is_can_use_vbat == true && current_status.timer_status != TIMER_STATUS_WARNING)
+    // 사용할수 있는 전압이고 경고 상태가 아니고 초기 애니메이션이 끝났으면
+    if (is_can_use_vbat == true && current_status.timer_status != TIMER_STATUS_WARNING && !current_status.init_animation_active)
     {
       // Setting_Button 핀 상태 읽기 (PULLUP 설정이므로 평상시 HIGH, 눌리면 LOW)
       GPIO_PinState button_raw_state = HAL_GPIO_ReadPin(Setting_Button_GPIO_Port, Setting_Button_Pin);
@@ -882,7 +897,7 @@ void StartButtonTask(void *argument)
               }
 
               // 타이머 값이 변경되었으므로 플래시에 저장
-              Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
+              // Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
 
               // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
               Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
@@ -912,7 +927,7 @@ void StartButtonTask(void *argument)
           Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
 
           // TIMER_SET 모드를 나갈 때 현재 타이머 값을 플래시에 저장
-          Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
+          // Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
         }
       }
 
@@ -924,7 +939,7 @@ void StartButtonTask(void *argument)
           Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
 
           // 5초 비활성화로 TIMER_SET 모드를 나갈 때도 플래시에 저장
-          Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
+          // Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
         }
       }
 

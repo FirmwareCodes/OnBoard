@@ -14,6 +14,9 @@
 #include <math.h>
 #include <stdio.h>
 
+// 외부 변수 선언 (freertos.c에서 정의된 UI 상태)
+extern UI_Status_t current_status;
+
 extern const unsigned char standby_icon_19x19[];
 extern const unsigned char running_icon_19x19[];
 extern const unsigned char setting_icon_19x19[];
@@ -773,38 +776,16 @@ void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, ui
 }
 
 /**
- * @brief 타이머 상태 아이콘 표시 (2-3구역 - 19x19 큰 아이콘, 겹침 방지)
+ * @brief 타이머 상태 아이콘 표시 (2-3구역 - 토글 스위치 또는 아이콘)
  * @param status: 타이머 상태
  */
 void UI_DrawTimerStatus(Timer_Status_t status)
 {
-    // 19x19 아이콘을 우측 영역에 중앙 정렬
-    uint16_t icon_x = (INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2)) - 1; // 우측 영역 중앙
-    uint16_t icon_y = INFO_STATUS_Y;
+    // 현재 시간 가져오기
+    uint32_t current_time = HAL_GetTick();
 
-    // 상태 아이콘 영역을 더 넓게 클리어 (겹침 완전 방지)
-    Paint_DrawRectangle(icon_x - 3, icon_y - 3,
-                        icon_x + 22, icon_y + 22,
-                        COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-
-    switch (status)
-    {
-    case TIMER_STATUS_STANDBY:
-        UI_DrawIcon19x19(icon_x, icon_y, standby_icon_19x19, COLOR_WHITE);
-        break;
-    case TIMER_STATUS_RUNNING:
-        UI_DrawIcon19x19(icon_x - 3, icon_y, running_icon_19x19, COLOR_WHITE);
-        break;
-    case TIMER_STATUS_SETTING:
-        UI_DrawIcon19x19(icon_x, icon_y, setting_icon_19x19, COLOR_WHITE);
-        break;
-    case TIMER_STATUS_COOLING:
-        UI_DrawIcon19x19(icon_x, icon_y, cooling_icon_19x19, COLOR_WHITE);
-        break;
-    case TIMER_STATUS_WARNING:
-        UI_DrawIcon19x19(icon_x, icon_y, warning_icon_19x19, COLOR_WHITE);
-        break;
-    }
+    // 전역 current_status의 토글 스위치 사용
+    UI_DrawTimerToggleStatus(status, &current_status.timer_toggle_switch, current_time);
 }
 
 /**
@@ -1040,7 +1021,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     }
 
     // 상태 아이콘 업데이트
-    if (prev_timer_status != status->timer_status)
+    if (prev_timer_status != status->timer_status || status->is_timer_toggle_animation_running)
     {
         is_changed_timer_status = true;
         UI_DrawTimerStatus(status->timer_status);
@@ -1075,4 +1056,258 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
 
     // 화면 업데이트
     OLED_1in3_C_Display(BlackImage);
+}
+
+/**
+ * @brief 토글 스위치 초기화
+ * @param toggle: 토글 스위치 구조체 포인터
+ * @param x: X 위치
+ * @param y: Y 위치
+ */
+void UI_InitToggleSwitch(Toggle_Switch_t *toggle, uint16_t x, uint16_t y)
+{
+    toggle->x = x;
+    toggle->y = y;
+    toggle->state = TOGGLE_STATE_OFF;
+    toggle->target_state = TOGGLE_STATE_OFF;
+    toggle->animation_step = 0;
+    toggle->last_update_time = 0;
+    toggle->is_animating = 0;
+}
+
+/**
+ * @brief 토글 스위치 애니메이션 시작
+ * @param toggle: 토글 스위치 구조체 포인터
+ * @param target_state: 목표 상태
+ */
+void UI_StartToggleAnimation(Toggle_Switch_t *toggle, Toggle_State_t target_state)
+{
+    // 목표 상태가 현재 상태와 다를 때만 애니메이션 시작
+    if (toggle->target_state != target_state)
+    {
+        toggle->target_state = target_state;
+        toggle->is_animating = 1;
+        toggle->animation_step = 0;
+        toggle->last_update_time = HAL_GetTick();
+    }
+}
+
+/**
+ * @brief 토글 스위치 애니메이션 업데이트
+ * @param toggle: 토글 스위치 구조체 포인터
+ * @param current_time: 현재 시간 (ms)
+ * @return 애니메이션 완료 여부 (1: 완료, 0: 진행중)
+ */
+uint8_t UI_UpdateToggleAnimation(Toggle_Switch_t *toggle, uint32_t current_time)
+{
+    if (!toggle->is_animating)
+        return 1;
+
+    // 애니메이션 지연 시간 확인 (더 정확한 타이밍)
+    if (current_time - toggle->last_update_time >= TOGGLE_ANIMATION_DELAY)
+    {
+        if (8 > toggle->animation_step)
+        {
+            toggle->animation_step += 2;
+        }
+        else
+        {
+            toggle->animation_step++;
+        }
+        toggle->last_update_time = current_time;
+
+        // 애니메이션 완료 확인
+        if (toggle->animation_step >= TOGGLE_ANIMATION_STEPS)
+        {
+            toggle->state = toggle->target_state;
+            toggle->is_animating = 0;
+            toggle->animation_step = 0;
+            current_status.is_timer_toggle_animation_running = 0;
+
+            return 1; // 애니메이션 완료
+        }
+    }
+
+    return 0; // 애니메이션 진행중
+}
+
+/**
+ * @brief 토글 스위치 그리기
+ * @param toggle: 토글 스위치 구조체 포인터
+ */
+void UI_DrawToggleSwitch(Toggle_Switch_t *toggle)
+{
+    uint16_t base_x = toggle->x;
+    uint16_t base_y = toggle->y;
+
+    // 배경 영역 클리어 (텍스트 포함하여 더 넓게)
+    Paint_DrawRectangle(base_x, base_y - 6,
+                        126, base_y + TOGGLE_SWITCH_HEIGHT + 4,
+                        COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    // 현재 상태에 따른 배경색 결정
+    uint16_t bg_color;
+    uint8_t current_is_on = 0;
+
+    if (toggle->is_animating)
+    {
+        // 애니메이션 중에는 목표 상태를 기준으로 색상 결정
+        current_is_on = (toggle->target_state == TOGGLE_STATE_ON) ? 1 : 0;
+    }
+    else
+    {
+        // 정적 상태에서는 현재 상태를 기준으로 색상 결정
+        current_is_on = (toggle->state == TOGGLE_STATE_ON) ? 1 : 0;
+    }
+
+    if (current_is_on)
+    {
+        // ON 상태: 배경 흰색
+        bg_color = COLOR_BLACK;
+    }
+    else
+    {
+        // OFF 상태: 배경 검정
+        bg_color = COLOR_BLACK;
+    }
+
+    // 스위치 배경 그리기
+    Paint_DrawRectangle(base_x + 1, base_y,
+                        base_x + TOGGLE_SWITCH_WIDTH + 2, base_y + TOGGLE_SWITCH_HEIGHT,
+                        bg_color, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    Paint_DrawCircle(base_x + 8, base_y + TOGGLE_SWITCH_HEIGHT / 2, TOGGLE_SWITCH_RADIUS + 2, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    Paint_DrawCircle(base_x + TOGGLE_SWITCH_WIDTH - 6, base_y + TOGGLE_SWITCH_HEIGHT / 2, TOGGLE_SWITCH_RADIUS + 2, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+
+    // 스위치 테두리 (항상 흰색)
+    Paint_DrawRectangle(base_x + 8, base_y,
+                        base_x + TOGGLE_SWITCH_WIDTH - 5, base_y + TOGGLE_SWITCH_HEIGHT,
+                        COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+    // 스위치 배경 그리기
+    Paint_DrawRectangle(base_x + 8, base_y + 1,
+                        base_x + TOGGLE_SWITCH_WIDTH - 5, base_y + TOGGLE_SWITCH_HEIGHT,
+                        bg_color, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    // 핸들 위치 계산
+    uint16_t handle_x_off = base_x + TOGGLE_SWITCH_RADIUS + 2;                  // OFF 위치 (좌측)
+    uint16_t handle_x_on = base_x + TOGGLE_SWITCH_WIDTH - TOGGLE_SWITCH_RADIUS; // ON 위치 (우측)
+    uint16_t handle_y = base_y + TOGGLE_SWITCH_HEIGHT / 2;
+    uint16_t handle_x;
+
+    if (toggle->is_animating)
+    {
+        // 애니메이션 중일 때 정확한 선형 보간
+        float progress = (float)toggle->animation_step / (float)TOGGLE_ANIMATION_STEPS;
+
+        // 진행도 제한 (0.0 ~ 1.0)
+        if (progress > 1.0f)
+            progress = 1.0f;
+        if (progress < 0.0f)
+            progress = 0.0f;
+
+        if (toggle->target_state == TOGGLE_STATE_ON)
+        {
+            // OFF -> ON 애니메이션: 왼쪽에서 오른쪽으로
+            float distance = (float)(handle_x_on - handle_x_off);
+            handle_x = handle_x_off + (uint16_t)(distance * progress);
+        }
+        else
+        {
+            // ON -> OFF 애니메이션: 오른쪽에서 왼쪽으로
+            float distance = (float)(handle_x_on - handle_x_off);
+            handle_x = handle_x_on - (uint16_t)(distance * progress);
+        }
+    }
+    else
+    {
+        // 정적 상태
+        if (toggle->state == TOGGLE_STATE_ON)
+        {
+            handle_x = handle_x_on;
+        }
+        else
+        {
+            handle_x = handle_x_off;
+        }
+    }
+
+    // 핸들 그리기 (항상 흰색 원형)
+    Paint_DrawCircle(handle_x, handle_y, TOGGLE_SWITCH_RADIUS - 1, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    // 애니메이션 중이 아닐 때만 텍스트 표시
+    if (!toggle->is_animating)
+    {
+        if (toggle->state == TOGGLE_STATE_OFF)
+        {
+            // OFF 상태: 핸들이 왼쪽에 있으므로 오른쪽에 "OFF" 표시
+            Paint_DrawString_EN(base_x + 14, base_y + 2, "OFF", &Font12, COLOR_WHITE, bg_color);
+        }
+        else
+        {
+            // ON 상태: 핸들이 오른쪽에 있으므로 왼쪽에 "ON" 표시
+            Paint_DrawString_EN(base_x + 5, base_y + 2, "ON", &Font12, COLOR_WHITE, bg_color);
+        }
+    }
+}
+
+/**
+ * @brief 타이머 상태에 따른 토글 스위치 표시 및 애니메이션 처리
+ * @param status: 타이머 상태
+ * @param toggle: 토글 스위치 구조체 포인터
+ * @param current_time: 현재 시간 (ms)
+ */
+void UI_DrawTimerToggleStatus(Timer_Status_t status, Toggle_Switch_t *toggle, uint32_t current_time)
+{
+    // STANDBY와 RUNNING 상태에서만 토글 스위치 표시
+    if (status == TIMER_STATUS_STANDBY || status == TIMER_STATUS_RUNNING)
+    {
+        // 목표 상태 결정
+        Toggle_State_t target_state = (status == TIMER_STATUS_RUNNING) ? TOGGLE_STATE_ON : TOGGLE_STATE_OFF;
+
+        // 상태 변화 확인 및 애니메이션 시작
+        if (toggle->target_state != target_state)
+        {
+            current_status.is_timer_toggle_animation_running = 1;
+            UI_StartToggleAnimation(toggle, target_state);
+        }
+
+        // 애니메이션 업데이트
+        UI_UpdateToggleAnimation(toggle, current_time);
+
+        // 토글 스위치 그리기
+        UI_DrawToggleSwitch(toggle);
+    }
+    else
+    {
+        // 다른 상태에서는 기존 아이콘 표시
+        uint16_t icon_x = (INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2)) - 1;
+        uint16_t icon_y = INFO_STATUS_Y;
+
+        uint16_t base_x = toggle->x;
+        uint16_t base_y = toggle->y;
+
+        // 배경 영역 클리어 (텍스트 포함하여 더 넓게)
+        Paint_DrawRectangle(base_x - 1, base_y - 1,
+                            base_x + TOGGLE_SWITCH_WIDTH + 2, base_y + TOGGLE_SWITCH_HEIGHT + 1,
+                            COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        // 상태 아이콘 영역 클리어 (텍스트 영역까지 포함)
+        Paint_DrawRectangle(icon_x - 20, icon_y - 3,
+                            icon_x + 42, icon_y + 22,
+                            COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+        switch (status)
+        {
+        case TIMER_STATUS_SETTING:
+            UI_DrawIcon19x19(icon_x, icon_y, setting_icon_19x19, COLOR_WHITE);
+            break;
+        case TIMER_STATUS_COOLING:
+            UI_DrawIcon19x19(icon_x, icon_y, cooling_icon_19x19, COLOR_WHITE);
+            break;
+        case TIMER_STATUS_WARNING:
+            UI_DrawIcon19x19(icon_x, icon_y, warning_icon_19x19, COLOR_WHITE);
+            break;
+        default:
+            break;
+        }
+    }
 }

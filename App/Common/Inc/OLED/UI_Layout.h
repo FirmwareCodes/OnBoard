@@ -20,7 +20,7 @@
 #define SCREEN_HEIGHT 64
 
 // 성능 및 업데이트 주기 설정
-#define UI_UPDATE_INTERVAL_MS 100                                           // 메인 UI 업데이트 주기 (10fps)
+#define UI_UPDATE_INTERVAL_MS 50                                           // 메인 UI 업데이트 주기 (10fps)
 #define PROGRESS_UPDATE_INTERVAL_MS 250                                     // 프로그래스바 업데이트 주기 (4fps)
 #define BLINK_INTERVAL_MS 250                                               // 깜빡임 주기 (사용안함 - 시스템 틱 기반으로 대체)
 #define BLINK_COUNTER_THRESHOLD (BLINK_INTERVAL_MS / UI_UPDATE_INTERVAL_MS) // 깜빡임 카운터 임계값 (사용안함)
@@ -91,6 +91,33 @@
 #define ICON_SIZE_MEDIUM 12
 #define ICON_SIZE_LARGE 16
 
+// 토글 스위치 관련 정의
+#define TOGGLE_SWITCH_WIDTH 38      // 토글 스위치 전체 폭
+#define TOGGLE_SWITCH_HEIGHT 16     // 토글 스위치 높이 
+#define TOGGLE_SWITCH_RADIUS 6      // 스위치 핸들 반지름
+#define TOGGLE_ANIMATION_STEPS 12   // 애니메이션 단계수 
+#define TOGGLE_ANIMATION_DELAY 50   // 애니메이션 지연 
+
+// 토글 스위치 상태 열거형
+typedef enum
+{
+    TOGGLE_STATE_OFF = 0,        // OFF 상태 (STANDBY)
+    TOGGLE_STATE_ON = 1,         // ON 상태 (RUNNING)
+    TOGGLE_STATE_ANIMATING = 2   // 애니메이션 중
+} Toggle_State_t;
+
+// 토글 스위치 구조체
+typedef struct
+{
+    uint16_t x;                     // 스위치 위치 X
+    uint16_t y;                     // 스위치 위치 Y
+    Toggle_State_t state;           // 현재 상태
+    Toggle_State_t target_state;    // 목표 상태
+    uint8_t animation_step;         // 현재 애니메이션 단계 (0-TOGGLE_ANIMATION_STEPS)
+    uint32_t last_update_time;      // 마지막 업데이트 시간
+    uint8_t is_animating;           // 애니메이션 진행 중 플래그
+} Toggle_Switch_t;
+
 // 타이머 상태 열거형
 typedef enum
 {
@@ -134,6 +161,10 @@ typedef struct
     uint8_t init_animation_active; // 초기 애니메이션 활성 상태
     float animation_voltage;       // 애니메이션용 전압
     uint32_t animation_counter;    // 애니메이션 카운터
+
+    // 토글 스위치 관련
+    Toggle_Switch_t timer_toggle_switch; // 타이머 토글 스위치 상태
+    uint8_t is_timer_toggle_animation_running;           // 타이머 실행 상태 플래그
 } UI_Status_t;
 
 // 상태 아이콘 비트맵 (19x19) - 더 큰 아이콘
@@ -198,5 +229,12 @@ void UI_DrawNumber(uint16_t x, uint16_t y, uint16_t number, uint16_t color);
 void UI_DrawColon(uint16_t x, uint16_t y, uint16_t color);
 void UI_DrawCircle(uint16_t x, uint16_t y, uint16_t radius, uint16_t color, uint8_t filled);
 void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color, uint8_t should_update);
+
+// 토글 스위치 관련 함수
+void UI_InitToggleSwitch(Toggle_Switch_t *toggle, uint16_t x, uint16_t y);
+void UI_StartToggleAnimation(Toggle_Switch_t *toggle, Toggle_State_t target_state);
+uint8_t UI_UpdateToggleAnimation(Toggle_Switch_t *toggle, uint32_t current_time);
+void UI_DrawToggleSwitch(Toggle_Switch_t *toggle);
+void UI_DrawTimerToggleStatus(Timer_Status_t status, Toggle_Switch_t *toggle, uint32_t current_time);
 
 #endif
