@@ -13,7 +13,7 @@ extern "C"
     // UART 태스크용 전역 변수
     typedef struct
     {
-        uint8_t rx_buffer[256];     // 수신 버퍼
+        uint8_t rx_buffer[128];     // 수신 버퍼
         uint8_t tx_buffer[1200];    // 송신 버퍼 (화면 데이터용)
         uint8_t cmd_buffer[128];    // 명령어 버퍼
         uint16_t rx_index;          // 수신 인덱스

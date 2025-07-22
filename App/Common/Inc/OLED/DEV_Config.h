@@ -50,7 +50,6 @@ UBYTE 	System_Init(void);
 void    System_Exit(void);
 
 UBYTE 	SPI4W_Write_Byte(UBYTE value);
-void 	I2C_Write_Byte(UBYTE value, UBYTE Cmd);
 
 void Driver_Delay_ms(uint32_t xms);
 void Driver_Delay_us(uint32_t xus);

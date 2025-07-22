@@ -33,25 +33,10 @@
 #define _IMAGEDATA_H_
 
 
-extern const unsigned char gImage_1in32[];	//rotate 90, Color reversal
 
-extern const unsigned char gImage_0in96_1[];	// rotate 90
-extern const unsigned char gImage_0in96_2[];	// rotate 90
-extern const unsigned char gImage_0in96_3[];	// rotate 90
-extern const unsigned char gImage_0in96_4[];	// rotate 90
-
-extern const unsigned char gImage_0in91[];	//rotate 90, Color reversal
-extern const unsigned char gImage_0in95_rgb[];	//rotate 0, MSB first
-extern const unsigned char gImage_0in96[];	//rotate 90
-extern const unsigned char gImage_0in96_rgb[];
 extern const unsigned char gImage_1in3[];	//rotate 90
 extern const unsigned char gImage_1in3_c[];	//rotate 180
-extern const unsigned char gImage_1in5[];	//rotate 90, Color reversal
-extern const unsigned char gImage_1in5_b[];
-extern const unsigned char gImage_1in5_rgb[];//rotate 90, MSB first
 extern const unsigned char gImage_visol[];
-extern const unsigned char gImage_powray[];
-extern const unsigned char gImage_my[];
 #endif
 /* FILE END */
 

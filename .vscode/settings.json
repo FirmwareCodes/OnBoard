@@ -8,6 +8,9 @@
         "task.h": "c",
         "oled_1in3_c.h": "c",
         "ui_layout.h": "c",
-        "dev_config.h": "c"
+        "dev_config.h": "c",
+        "imagedata.h": "c",
+        "gui_paint.h": "c",
+        "stm32l4xx_hal_gpio.h": "c"
     }
 }

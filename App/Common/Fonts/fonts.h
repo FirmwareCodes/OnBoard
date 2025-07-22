@@ -80,10 +80,7 @@ extern "C"
 
   extern sFONT Font8;
   extern sFONT Font12;
-  extern sFONT Font16;
   extern sFONT Font24;
-  extern sFONT FontIcon16;  // Simple 16x16 Icon Font
-  extern sFONT FontImage24; // Simple 24x24 Image Font
 
   // extern cFONT Font12CN;
   // extern cFONT Font24CN;
