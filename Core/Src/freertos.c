@@ -362,9 +362,15 @@ void StartOneSecondTask(void *argument)
   /* Infinite loop */
   for (;;)
   {
-    // 타이머 시작 시간
 
-    HAL_GPIO_TogglePin(System_LED_GPIO_Port, System_LED_Pin);
+    // 타이머 시작 시간
+    if (is_can_use_vbat == true)
+      HAL_GPIO_TogglePin(System_LED_GPIO_Port, System_LED_Pin);
+    else if (is_can_use_vbat == false && HAL_GPIO_ReadPin(System_LED_GPIO_Port, System_LED_Pin) == GPIO_PIN_SET)
+    {
+      HAL_GPIO_WritePin(System_LED_GPIO_Port, System_LED_Pin, GPIO_PIN_RESET);
+    }
+
     vTaskDelayUntil(&lastWakeTime, 1000 * portTICK_PERIOD_MS);
   }
   /* USER CODE END 5 */
@@ -377,7 +383,7 @@ void StartOneSecondTask(void *argument)
  * @retval None
  */
 /* USER CODE END Header_StartAdcTask */
-__attribute__((optimize("O0"))) void StartAdcTask(void *argument)
+void StartAdcTask(void *argument)
 {
   UNUSED(argument);
   /* USER CODE BEGIN StartAdcTask */
@@ -977,7 +983,7 @@ void StartUartTask(void *argument)
   for (;;)
   {
     // 1. 수신된 명령어 처리 (안전한 방식으로)
-    if (UART_State.command_ready)
+    if (UART_State.command_ready && is_can_use_vbat == true)
     {
       UART_ProcessCommand();
     }

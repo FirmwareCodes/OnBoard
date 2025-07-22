@@ -98,10 +98,8 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  
-
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-   HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -129,7 +127,7 @@ int main(void)
   Paint_Clear(BLACK);
   OLED_1in3_C_Display(gImage_visol);
   HAL_Delay(1000);
-  
+
   // UART 초기화는 UartTask에서 처리됩니다
   /* USER CODE END 2 */
   /* Init scheduler */
