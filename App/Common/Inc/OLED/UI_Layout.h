@@ -38,7 +38,7 @@
 
 // 배터리 원형 프로그래스 (좌측 영역 중앙)
 #define BATTERY_CENTER_X 36
-#define BATTERY_CENTER_Y 30
+#define BATTERY_CENTER_Y 32
 #define BATTERY_OUTER_RADIUS 32 // 더 큰 반지름
 #define BATTERY_INNER_RADIUS 20
 #define BATTERY_PROGRESS_WIDTH 8 // 더 두꺼운 프로그래스바

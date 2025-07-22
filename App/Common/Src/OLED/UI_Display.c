@@ -623,16 +623,16 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 
     // Paint_DrawLine(56, 21, 68, 15, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     // Paint_DrawLine(55, 20, 68, 14, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    Paint_DrawLine(56, 19, 65, 10, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    Paint_DrawLine(56, 20, 65, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    Paint_DrawLine(57, 20, 66, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    Paint_DrawLine(57, 21, 66, 12, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(55, 20, 65, 10, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(55, 21, 65, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(56, 21, 66, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(56, 22, 66, 12, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
     Paint_DrawLine(57, 22, 67, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     Paint_DrawLine(57, 23, 67, 13, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-    Paint_DrawLine(55, 18, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    Paint_DrawLine(55, 19, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(54, 19, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(54, 20, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
     // 배터리 영역 전체 클리어
     // Paint_DrawRectangle(69, 2, 76, 10, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
@@ -643,8 +643,8 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
         // 네모 배터리 그리기
         uint16_t battery_width = 7;  // 배터리 본체 너비
         uint16_t battery_height = 9; // 배터리 본체 높이
-        uint16_t battery_x = 69;     // 배터리 X 시작점
-        uint16_t battery_y = 3;      // 배터리 Y 시작점
+        uint16_t battery_x = 68;     // 배터리 X 시작점
+        uint16_t battery_y = 4;      // 배터리 Y 시작점
 
         // 배터리 양극 단자 크기
         uint16_t terminal_width = 3;
