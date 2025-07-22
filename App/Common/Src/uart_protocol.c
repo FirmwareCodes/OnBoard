@@ -309,7 +309,7 @@ void UART_ProcessTimerStart(void)
     Button_State.second_count = 0;
 
     // 메인 타이머 시작
-    osTimerStart(MainTimerHandle, 1000);
+    osTimerStart(MainTimerHandle, 500);
 
     // 팬 ON
     HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);

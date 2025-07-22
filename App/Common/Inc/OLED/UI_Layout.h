@@ -20,10 +20,10 @@
 #define SCREEN_HEIGHT 64
 
 // 성능 및 업데이트 주기 설정
-#define UI_UPDATE_INTERVAL_MS 50                                          // 메인 UI 업데이트 주기 (20fps)
-#define PROGRESS_UPDATE_INTERVAL_MS 250                                     // 프로그래스바 업데이트 주기 (5fps)
-#define BLINK_INTERVAL_MS 250                                               // 깜빡임 주기 (1초)
-#define BLINK_COUNTER_THRESHOLD (BLINK_INTERVAL_MS / UI_UPDATE_INTERVAL_MS) // 깜빡임 카운터 임계값
+#define UI_UPDATE_INTERVAL_MS 100                                           // 메인 UI 업데이트 주기 (10fps)
+#define PROGRESS_UPDATE_INTERVAL_MS 250                                     // 프로그래스바 업데이트 주기 (4fps)
+#define BLINK_INTERVAL_MS 250                                               // 깜빡임 주기 (사용안함 - 시스템 틱 기반으로 대체)
+#define BLINK_COUNTER_THRESHOLD (BLINK_INTERVAL_MS / UI_UPDATE_INTERVAL_MS) // 깜빡임 카운터 임계값 (사용안함)
 
 // 메인 영역 분할
 #define LEFT_AREA_WIDTH 80  // 좌측 배터리 영역
@@ -39,7 +39,7 @@
 // 배터리 원형 프로그래스 (좌측 영역 중앙)
 #define BATTERY_CENTER_X 36
 #define BATTERY_CENTER_Y 30
-#define BATTERY_OUTER_RADIUS 33 // 더 큰 반지름
+#define BATTERY_OUTER_RADIUS 32 // 더 큰 반지름
 #define BATTERY_INNER_RADIUS 20
 #define BATTERY_PROGRESS_WIDTH 8 // 더 두꺼운 프로그래스바
 
@@ -113,8 +113,9 @@ typedef enum
 typedef struct
 {
     float battery_voltage;         // 배터리 전압 (V)
+    float last_battery_voltage;    // 마지막 배터리 전압
     float battery_percentage;      // 배터리 퍼센트
-    float last_battery_percentage;    // 마지막 배터리 전압
+    float last_battery_percentage; // 마지막 배터리 퍼센트
     uint8_t timer_minutes;         // 설정된 타이머 분
     uint8_t timer_seconds;         // 설정된 타이머 초
     Timer_Status_t timer_status;   // 타이머 상태
@@ -125,7 +126,7 @@ typedef struct
 
     // 디스플레이 업데이트 관련
     uint32_t progress_update_counter; // 프로그래스바 업데이트 카운터
-    uint32_t blink_counter;           // 깜빡임 카운터
+    uint32_t blink_counter;           // 깜빡임 카운터 (호환성 유지, 시스템 틱 기반으로 대체됨)
     uint8_t force_full_update;        // 전체 업데이트 강제 플래그
     uint8_t timer_indicator_blink;    // 타이머 실행 표시기 깜빡임
 
@@ -174,7 +175,7 @@ void UI_DrawBatteryArea(float voltage, UI_Status_t *status);
 void UI_DrawVoltageProgress(float voltage, UI_Status_t *status);
 void UI_DrawBatteryVoltage(float voltage);
 void UI_DrawTimerIndicator(uint8_t show); // 타이머 실행 표시기 그리기
-
+void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t blink_state);
 // 초기 애니메이션 관련 함수
 void UI_StartInitAnimation(UI_Status_t *status, float target_voltage);
 uint8_t UI_UpdateInitAnimation(UI_Status_t *status);

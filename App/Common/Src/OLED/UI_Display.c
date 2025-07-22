@@ -26,6 +26,8 @@ extern const unsigned char exclamation_12x12[];
 extern const unsigned char digit_5x7[10][7];
 extern const unsigned char colon_3x7[7];
 
+extern bool is_half_second_tick;
+
 // 최적화를 위한 전역 변수 (삼각함수 룩업 테이블)
 static float sin_table[720] = {0}; // 0.5도 간격으로 360도 * 2
 static float cos_table[720] = {0};
@@ -465,26 +467,43 @@ void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
     // LOW BAT 상태일 때는 배터리 영역의 다른 요소들을 그리지 않음
     if (current_voltage <= CRITICAL_BATTERY_VOLTAGE && !status->init_animation_active)
     {
-        // 전압 기반 프로그래스바 그리기 (LOW BAT 알람 처리)
-        UI_DrawVoltageProgress(voltage, status);
-        return; // LOW BAT 상태에서는 다른 요소들 그리지 않음
-    }
-
-    // 정상 상태로 복귀 시 배터리 영역 완전 클리어 (잔상 제거)
-    if (current_voltage > CRITICAL_BATTERY_VOLTAGE)
-    {
+        // 배터리 영역 전체 완전히 클리어 (좌측 96x64 영역)
         Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+        // LOW BAT 알람 표시 (빠른 깜빡임 - 0.5초 주기) - 시스템 틱 기반으로 정확한 주기 보장
+        uint32_t current_tick = xTaskGetTickCount();
+        uint32_t half_second_ticks = 500 / portTICK_PERIOD_MS;        // 0.5초를 틱으로 변환
+        uint8_t blink_state = (current_tick / half_second_ticks) % 2; // 0.5초 주기로 깜빡임
+        draw_low_battery_alarm(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, blink_state);
+
+        return; // LOW BAT 상태에서는 다른 요소들 그리지 않음
     }
 
     // 영역 경계선 그리기 (현재 사용안함-검정)
     // Paint_DrawLine(LEFT_AREA_WIDTH, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
     // 전압 기반 프로그래스바 그리기 (애니메이션 지원)
-    UI_DrawVoltageProgress(voltage, status);
+    if ((uint16_t)(current_voltage * 10) != (uint16_t)(status->last_battery_voltage * 10))
+    {
+        // 정상 상태로 복귀 시 배터리 영역 완전 클리어 (잔상 제거)
+        if (current_voltage > CRITICAL_BATTERY_VOLTAGE)
+        {
+            Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        }
 
-    // 배터리 전압 그리기
-    float display_voltage = status->init_animation_active ? status->animation_voltage : voltage;
-    UI_DrawBatteryVoltage(display_voltage);
+        if (status->timer_status == TIMER_STATUS_RUNNING)
+        {
+            UI_DrawTimerIndicator(is_half_second_tick);
+        }
+        else
+        {
+            UI_DrawTimerIndicator(0);
+        }
+
+        status->last_battery_voltage = current_voltage;
+        UI_DrawVoltageProgress(voltage, status);
+        UI_DrawBatteryVoltage(current_voltage);
+    }
 }
 
 /**
@@ -494,7 +513,7 @@ void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
  * @param radius: 반지름 (사용하지 않음, 호환성을 위해 유지)
  * @param blink_state: 깜빡임 상태 (0: 꺼짐, 1: 켜짐)
  */
-static void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t blink_state)
+void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t blink_state)
 {
     UNUSED(blink_state);
     UNUSED(radius);
@@ -533,7 +552,7 @@ static void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_
     const char *low_text = "LOW";
     const char *low_text2 = "BATTERY";
     uint16_t text_x = battery_x + 14;  // 배터리 내부 중앙 정렬
-    uint16_t text_x2 = battery_x + 2;  // 배터리 내부 중앙 정렬
+    uint16_t text_x2 = battery_x + 3;  // 배터리 내부 중앙 정렬
     uint16_t text_y1 = battery_y + 6;  // 첫 번째 줄 (위쪽)
     uint16_t text_y2 = battery_y + 18; // 두 번째 줄 (아래쪽)
 
@@ -561,19 +580,6 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
 
     // 애니메이션 중이면 애니메이션 전압 사용, 아니면 실제 전압 사용
     float current_voltage = status->init_animation_active ? status->animation_voltage : voltage;
-
-    // 심각한 배터리 부족 상태 확인 (main.h에서 정의된 값 사용)
-    if (current_voltage <= CRITICAL_BATTERY_VOLTAGE && !status->init_animation_active)
-    {
-        // 배터리 영역 전체 완전히 클리어 (좌측 96x64 영역)
-        Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-
-        // LOW BAT 알람 표시 (빠른 깜빡임 - 0.5초 주기)
-        uint8_t blink_state = (status->blink_counter / 10) % 2; // 0.5초 주기로 깜빡임
-        draw_low_battery_alarm(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, blink_state);
-        return;
-    }
-
     // 점진적 변화를 위한 퍼센트 계산
     float voltage_percent;
     if (status->init_animation_active)
@@ -615,50 +621,50 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     // 원형 프로그래스바 그리기
     UI_DrawCircularProgressOptimized(BATTERY_CENTER_X, BATTERY_CENTER_Y, BATTERY_OUTER_RADIUS, progress, progress_color, 1);
 
-    // 전압 눈금 표시 (애니메이션 완료 후에만)
-    if (!status->init_animation_active)
+    // Paint_DrawLine(56, 21, 68, 15, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    // Paint_DrawLine(55, 20, 68, 14, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(56, 19, 65, 10, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(56, 20, 65, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(57, 20, 66, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(57, 21, 66, 12, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+    Paint_DrawLine(58, 21, 67, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(58, 22, 67, 13, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+    Paint_DrawLine(55, 18, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(55, 19, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+    // 배터리 영역 전체 클리어
+    // Paint_DrawRectangle(69, 2, 76, 10, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+    // 배터리 경고 표시
+    if (current_voltage <= WARNING_BATTERY_VOLTAGE)
     {
-        // Paint_DrawLine(56, 21, 68, 15, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        // Paint_DrawLine(55, 20, 68, 14, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(56, 19, 65, 10, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(56, 20, 65, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(57, 20, 66, 11, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(57, 21, 66, 12, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // 네모 배터리 그리기
+        uint16_t battery_width = 7;  // 배터리 본체 너비
+        uint16_t battery_height = 9; // 배터리 본체 높이
+        uint16_t battery_x = 69;     // 배터리 X 시작점
+        uint16_t battery_y = 3;      // 배터리 Y 시작점
 
-        Paint_DrawLine(58, 21, 67, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(58, 22, 67, 13, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // 배터리 양극 단자 크기
+        uint16_t terminal_width = 3;
+        uint16_t terminal_height = 2;
+        uint16_t terminal_x = (battery_x + battery_width / 2) - 1;
+        uint16_t terminal_y = battery_y - terminal_height;
 
-        Paint_DrawLine(55, 18, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        Paint_DrawLine(55, 19, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        // 배터리 본체 테두리 (단일 테두리로 단순화)
+        Paint_DrawRectangle(battery_x, battery_y,
+                            battery_x + battery_width, battery_y + battery_height,
+                            COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
 
-        // 배터리 영역 전체 클리어
-        // Paint_DrawRectangle(69, 2, 76, 10, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        // 배터리 양극 단자 그리기
+        Paint_DrawRectangle(terminal_x, terminal_y,
+                            terminal_x + terminal_width, terminal_y + terminal_height,
+                            COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-        // 배터리 경고 표시
-        if (current_voltage <= WARNING_BATTERY_VOLTAGE)
+        if (current_voltage >= (WARNING_BATTERY_VOLTAGE - 0.4))
         {
-            // 네모 배터리 그리기
-            uint16_t battery_width = 7;  // 배터리 본체 너비
-            uint16_t battery_height = 9; // 배터리 본체 높이
-            uint16_t battery_x = 69;     // 배터리 X 시작점
-            uint16_t battery_y = 3;      // 배터리 Y 시작점
-
-            // 배터리 양극 단자 크기
-            uint16_t terminal_width = 3;
-            uint16_t terminal_height = 2;
-            uint16_t terminal_x = (battery_x + battery_width / 2) - 1;
-            uint16_t terminal_y = battery_y - terminal_height;
-
-            // 배터리 본체 테두리 (단일 테두리로 단순화)
-            Paint_DrawRectangle(battery_x, battery_y,
-                                battery_x + battery_width, battery_y + battery_height,
-                                COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-
-            // 배터리 양극 단자 그리기
-            Paint_DrawRectangle(terminal_x, terminal_y,
-                                terminal_x + terminal_width, terminal_y + terminal_height,
-                                COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-
+            // 배터리 잔량 표기
             Paint_DrawRectangle(battery_x + 2, battery_y + battery_height - 3,
                                 battery_x + battery_width - 2, battery_y + battery_height - 1, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
         }
@@ -735,18 +741,22 @@ void UI_DrawInfoArea(UI_Status_t *status)
  * @param minutes: 분
  * @param seconds: 초
  * @param should_blink: 깜빡임 여부
- * @param blink_counter: 깜빡임 카운터
+ * @param blink_counter: 깜빡임 카운터 (사용하지 않음, 호환성 유지)
  */
 void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, uint32_t blink_counter)
 {
+    UNUSED(blink_counter); // 더 이상 사용하지 않음
+
     uint16_t x_pos = INFO_TIMER_X;
     uint16_t y_pos = INFO_TIMER_Y;
 
-    // 깜빡임 효과: 20프레임마다 토글 (50ms * 20 = 1초 주기)
+    // 깜빡임 효과: 시스템 틱 기반 1초 주기 (정확한 시간 기반)
     uint8_t show_text = 1;
-    if (should_blink && ((blink_counter / 10) % 2 == 0))
+    if (should_blink)
     {
-        show_text = 0; // 숨김
+        uint32_t current_tick = xTaskGetTickCount();
+        uint32_t one_second_ticks = 1000 / portTICK_PERIOD_MS; // 1초를 틱으로 변환
+        show_text = (current_tick / one_second_ticks) % 2;     // 1초마다 토글
     }
 
     if (show_text)
@@ -963,8 +973,7 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
     static uint8_t prev_timer_seconds = 255;
     static LED_Connection_t prev_l1_connected = LED_DISCONNECTED;
     static LED_Connection_t prev_l2_connected = LED_DISCONNECTED;
-    static uint8_t prev_timer_indicator = 255; // 이전 타이머 표시기 상태
-    static uint8_t prev_low_bat_state = 0;     // 이전 LOW BAT 상태 추적
+    static uint8_t prev_low_bat_state = 0; // 이전 LOW BAT 상태 추적
 
     // 현재 LOW BAT 상태 확인
     uint8_t current_low_bat_state = (status->battery_voltage <= CRITICAL_BATTERY_VOLTAGE) ? 1 : 0;
@@ -995,16 +1004,17 @@ void UI_DrawFullScreenOptimized(UI_Status_t *status)
             prev_timer_seconds = status->timer_seconds;
             prev_l1_connected = status->l1_connected;
             prev_l2_connected = status->l2_connected;
-            prev_timer_indicator = status->timer_indicator_blink;
         }
         return; // 전체 업데이트 후 종료
     }
 
-    // 타이머 실행 표시기 업데이트 (상태가 변경된 경우)
-    if (prev_timer_indicator != status->timer_indicator_blink)
+    if (status->timer_status == TIMER_STATUS_RUNNING)
     {
-        UI_DrawTimerIndicator(status->timer_indicator_blink);
-        prev_timer_indicator = status->timer_indicator_blink;
+        UI_DrawTimerIndicator(is_half_second_tick);
+    }
+    else if (status->warning_status == 0)
+    {
+        UI_DrawTimerIndicator(0);
     }
 
     // 타이머 시간 업데이트 (값이 변경되거나 깜빡임이 필요한 경우)

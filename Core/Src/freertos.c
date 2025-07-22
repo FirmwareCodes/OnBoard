@@ -175,6 +175,9 @@ UI_Status_t current_status = {
 Battery_Monitor_t Battery_Monitor = {0};
 
 bool is_can_use_vbat = false;
+
+bool is_half_second_tick = false;
+
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -611,32 +614,7 @@ void StartDisplayTask(void *argument)
     {
       // 카운터 증가
       current_status.progress_update_counter++;
-      current_status.blink_counter++;
-
-      // 배터리 모니터 업데이트를 200ms마다만 실행 (성능 최적화)
-      // static uint8_t battery_update_counter = 0;
-      // static float cached_battery_percentage = 0.0f;
-      // battery_update_counter++;
-
-      // if (battery_update_counter >= 4) // 50ms * 4 = 200ms
-      // {
-      //   Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
-
-      //   // 배터리 퍼센트 캐싱 (200ms마다만 계산)
-      //   cached_battery_percentage = Battery_Get_Percentage_Float(&Battery_Monitor);
-
-      //   // 10초 평균 퍼센트 계산 (배터리 업데이트 시에만)
-      //   float current_percentage = cached_battery_percentage;
-      //   float ten_sec_avg_percentage = Battery_Calculate_Percentage(Battery_Get_10Second_Average_ADC(&Battery_Monitor));
-
-      //   // 점진적 프로그래스바 업데이트 (애니메이션 중이 아닐 때만)
-      //   if (!current_status.init_animation_active)
-      //   {
-      //     UI_UpdateSmoothProgress(&current_status, current_percentage, ten_sec_avg_percentage);
-      //   }
-
-      //   battery_update_counter = 0;
-      // }
+      // blink_counter는 더 이상 시스템 틱 기반 깜빡임으로 대체되어 불필요
 
       // 배터리 모니터 업데이트
       Battery_Monitor_Update(&Battery_Monitor, Adc_State.VBat_ADC_Value, false);
@@ -689,18 +667,6 @@ void StartDisplayTask(void *argument)
       else if (current_status.warning_status == 0)
       {
         Adc_State.Cut_Off_PWM = false;
-      }
-
-      // 타이머 실행 표시기 제어 (0.5초마다 토글)
-      if (current_status.timer_status == TIMER_STATUS_RUNNING)
-      {
-        // 타이머 실행 중: 0.5초마다 토글
-        current_status.timer_indicator_blink = (current_status.blink_counter / 10) % 2;
-      }
-      else
-      {
-        // 타이머 정지: 표시기 숨김
-        current_status.timer_indicator_blink = 0;
       }
 
       // 타이머 시간 설정 (다운카운트)
@@ -764,7 +730,7 @@ void StartDisplayTask(void *argument)
 
       UI_DrawFullScreenOptimized(&current_status);
     }
-    vTaskDelayUntil(&lastWakeTime, UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS);
+    vTaskDelayUntil(&lastWakeTime, current_status.init_animation_active ? 50 * portTICK_PERIOD_MS : UI_UPDATE_INTERVAL_MS * portTICK_PERIOD_MS);
   }
   // UI_UPDATE_INTERVAL_MS 주기로 업데이트
   /* USER CODE END StartDisplayTask */
@@ -876,7 +842,7 @@ void StartButtonTask(void *argument)
 
               if (Button_State.is_Start_Timer)
               {
-                osTimerStart(MainTimerHandle, 1000); // 1000ms = 1초 주기
+                osTimerStart(MainTimerHandle, 500); // 1000ms = 1초 주기
                 Button_State.minute_count = Button_State.Timer_Value;
                 Button_State.second_count = 0; // 59초부터 시작 (첫 번째 콜백에서 59->58로)
               }
@@ -1029,36 +995,40 @@ void Callback01(void *argument)
   UNUSED(argument);
   if (Button_State.is_Start_Timer)
   {
-    // 초 카운트다운
-    if (Button_State.second_count > 0)
+    is_half_second_tick = !is_half_second_tick;
+    if (!is_half_second_tick)
     {
-      Button_State.second_count--;
-    }
-    else
-    {
-      // 초가 0이 되면 분 감소하고 초를 59로 리셋
-      if (Button_State.minute_count > 0)
+      // 초 카운트다운
+      if (Button_State.second_count > 0)
       {
-        Button_State.minute_count--;
-        Button_State.second_count = 59;
+        Button_State.second_count--;
       }
       else
       {
-        // 타이머 완료: 0분 0초 도달
-        Button_State.is_Start_Timer = false;
-        Button_State.is_start_to_cooling = true;
+        // 초가 0이 되면 분 감소하고 초를 59로 리셋
+        if (Button_State.minute_count > 0)
+        {
+          Button_State.minute_count--;
+          Button_State.second_count = 59;
+        }
+        else
+        {
+          // 타이머 완료: 0분 0초 도달
+          Button_State.is_Start_Timer = false;
+          Button_State.is_start_to_cooling = true;
 
-        // 쿨링 시간을 최소 30초, 최대 60초로 설정
-        uint32_t cooling_time = Button_State.Timer_Value * 10;
-        if (cooling_time < 30)
-        {
-          cooling_time = 10;
+          // 쿨링 시간을 최소 30초, 최대 60초로 설정
+          uint32_t cooling_time = Button_State.Timer_Value * 10;
+          if (cooling_time < 30)
+          {
+            cooling_time = 10;
+          }
+          else if (cooling_time > 60)
+          {
+            cooling_time = 60;
+          }
+          Button_State.cooling_second = cooling_time;
         }
-        else if (cooling_time > 60)
-        {
-          cooling_time = 60;
-        }
-        Button_State.cooling_second = cooling_time;
       }
     }
   }
