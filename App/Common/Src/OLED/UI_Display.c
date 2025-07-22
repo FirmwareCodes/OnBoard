@@ -638,7 +638,7 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     // Paint_DrawRectangle(69, 2, 76, 10, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
     // 배터리 경고 표시
-    if (current_voltage <= WARNING_BATTERY_VOLTAGE)
+    if (current_voltage <= (WARNING_BATTERY_VOLTAGE + 0.4f))
     {
         // 네모 배터리 그리기
         uint16_t battery_width = 7;  // 배터리 본체 너비
@@ -662,7 +662,7 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
                             terminal_x + terminal_width, terminal_y + terminal_height,
                             COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-        if (current_voltage >= (WARNING_BATTERY_VOLTAGE - 0.4))
+        if (current_voltage >= WARNING_BATTERY_VOLTAGE)
         {
             // 배터리 잔량 표기
             Paint_DrawRectangle(battery_x + 2, battery_y + battery_height - 3,
