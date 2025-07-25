@@ -327,7 +327,7 @@ static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t ra
 }
 
 /**
- * @brief 원형 프로그래스바 그리기 
+ * @brief 원형 프로그래스바 그리기
  * @param center_x: 중심 X 좌표
  * @param center_y: 중심 Y 좌표
  * @param radius: 반지름
@@ -705,8 +705,8 @@ void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, ui
     if (should_blink)
     {
         uint32_t current_tick = xTaskGetTickCount();
-        uint32_t one_second_ticks = 1000 / portTICK_PERIOD_MS; // 1초를 틱으로 변환
-        show_text = (current_tick / one_second_ticks) % 2;     // 1초마다 토글
+        uint32_t one_second_ticks = 500 / portTICK_PERIOD_MS; // 1초를 틱으로 변환
+        show_text = (current_tick / one_second_ticks) % 3;    // 1초마다 토글
     }
 
     if (show_text)
@@ -799,7 +799,6 @@ void UI_DrawLEDStatus(Timer_Status_t status, LED_Connection_t l1_status, LED_Con
     {
         // 연결 안됨: 빈 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 0);
-
     }
 }
 
@@ -823,8 +822,10 @@ uint8_t UI_UpdateInitAnimation(UI_Status_t *status)
         return 0; // 아직 진행 중
     }
 
+    float dif_voltage = status->battery_voltage - status->animation_voltage;
     // 현재 목표 전압까지 0.2V씩 증가
-    const float ANIMATION_STEP = 0.1f;
+
+    const float ANIMATION_STEP = dif_voltage > 2 ? dif_voltage > 4 ? 0.3f : 0.2f : 0.1f;
 
     status->animation_voltage += ANIMATION_STEP;
 

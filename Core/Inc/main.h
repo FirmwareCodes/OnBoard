@@ -142,15 +142,15 @@ typedef struct
     bool is_start_to_cooling; // 쿨링 시작 여부
     int8_t cooling_second;    // 쿨링 초 카운트
     
-    // 더블 클릭 감지를 위한 변수들
-    uint32_t last_click_time;     // 마지막 클릭 시간
-    uint8_t click_count;          // 클릭 카운트
-    bool double_click_detected;   // 더블 클릭 감지 여부
+    // 더블 클릭 감지를 위한 변수들 (사용안함 - 단일클릭/긴클릭만 사용)
+    uint32_t last_click_time;     // 마지막 클릭 시간 (디바운싱용)
+    // uint8_t click_count;          // 클릭 카운트 (사용안함)
+    // bool double_click_detected;   // 더블 클릭 감지 여부 (사용안함)
     
-    // 단일클릭 지연 처리를 위한 변수들
-    bool pending_single_click;    // 대기 중인 단일클릭 여부
-    uint32_t single_click_time;   // 단일클릭 발생 시간
-    uint32_t single_click_duration; // 단일클릭 버튼 누름 시간
+    // 단일클릭 지연 처리를 위한 변수들 (사용안함 - 즉시 처리)
+    // bool pending_single_click;    // 대기 중인 단일클릭 여부 (사용안함)
+    // uint32_t single_click_time;   // 단일클릭 발생 시간 (사용안함)
+    // uint32_t single_click_duration; // 단일클릭 버튼 누름 시간 (사용안함)
     
     // 배터리 표시 토글
     bool show_battery_voltage;    // true: 전압 표시, false: 퍼센트 표시

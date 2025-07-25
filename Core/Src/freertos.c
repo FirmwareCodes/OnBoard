@@ -138,13 +138,13 @@ Button_t Button_State = {
     .is_pushed_changed = false,                   // 버튼 누름 상태로 인한 변경여부
     .is_start_to_cooling = false,                 // 쿨링 시작 여부
     .cooling_second = 0,                          // 쿨링 초 카운트
-    .last_click_time = 0,                         // 마지막 버튼 클릭 시간
-    .click_count = 0,                             // 더블 클릭 카운트
-    .double_click_detected = false,               // 더블 클릭 감지 플래그
-    .show_battery_voltage = false,                // 배터리 표시 토글 플래그
-    .pending_single_click = false,                // 대기 중인 단일클릭 플래그
-    .single_click_time = 0,                       // 단일클릭 시작 시간
-    .single_click_duration = 0,                   // 단일클릭 지속 시간
+    .last_click_time = 0,                         // 마지막 버튼 클릭 시간 (디바운싱용)
+    // .click_count = 0,                             // 더블 클릭 카운트 (사용안함)
+    // .double_click_detected = false,               // 더블 클릭 감지 플래그 (사용안함)
+    .show_battery_voltage = false, // 배터리 표시 토글 플래그
+                                   // .pending_single_click = false,                // 대기 중인 단일클릭 플래그 (사용안함)
+                                   // .single_click_time = 0,                       // 단일클릭 시작 시간 (사용안함)
+                                   // .single_click_duration = 0,                   // 단일클릭 지속 시간 (사용안함)
 };
 
 UART_State_t UART_State = {
@@ -770,7 +770,7 @@ void StartButtonTask(void *argument)
       // 버튼 릴리즈 감지 (LOW에서 HIGH로 전환) - 안정화된 상태에서만 처리
       if (Button_State.Button_Prev_State == GPIO_PIN_RESET &&
           Button_State.Button_Current_State == GPIO_PIN_SET &&
-          button_stable_count >= 3)
+          button_stable_count >= 2) // 기존 3에서 2로 변경
       {
         Button_State.Button_Press_Duration = Button_State.Button_Current_Time - Button_State.Button_Press_Start_Time;
 
@@ -784,106 +784,78 @@ void StartButtonTask(void *argument)
           uint32_t current_time = Button_State.Button_Current_Time;
           uint32_t time_since_last_click = current_time - Button_State.last_click_time;
 
+          // 100ms 이내의 연속 클릭은 무시 (디바운싱 방지)
           if (Button_State.last_click_time == 0 || time_since_last_click > (100 / portTICK_PERIOD_MS))
           {
-            Button_State.pending_single_click = true;
-            Button_State.single_click_time = current_time;
-            Button_State.single_click_duration = Button_State.Button_Press_Duration;
             Button_State.last_click_time = current_time;
-            Button_State.click_count = 1;
-            Button_State.double_click_detected = false; // 새로운 클릭 시퀀스 시작
-          }
-        }
-      }
 
-      // 지연된 단일클릭 처리 - 500ms 후에 실행
-      if (Button_State.pending_single_click)
-      {
-        uint32_t time_since_single_click = Button_State.Button_Current_Time - Button_State.single_click_time;
-
-        // 500ms 대기 후 단일클릭 처리
-        if (time_since_single_click >= (500 / portTICK_PERIOD_MS))
-        {
-          Button_State.pending_single_click = false;
-
-          // 단일클릭 처리 (더블클릭이 감지된 경우 이미 pending_single_click이 false로 설정됨)
-          // 버튼 상태에 따른 동작 처리
-          switch (Button_State.Current_Button_State)
-          {
-          case BUTTON_STATE_STANDBY:
-            // STANDBY에서 1초 이하 클릭 -> ON 상태로 전환
-            if (Button_State.single_click_duration < (1000 / portTICK_PERIOD_MS) && !Button_State.is_start_to_cooling)
+            // 짧은 클릭 (1초 미만) 즉시 처리
+            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
             {
-              HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
-              Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
-
-              if (Button_State.is_Start_Timer)
+              // 단일클릭 즉시 처리
+              switch (Button_State.Current_Button_State)
               {
-                osTimerStart(MainTimerHandle, 500); // 1000ms = 1초 주기
-                Button_State.minute_count = Button_State.Timer_Value;
-                Button_State.second_count = 0; // 59초부터 시작 (첫 번째 콜백에서 59->58로)
-              }
-              else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
-              {
-                Button_State.is_start_to_cooling = true;
-
-                int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
-                if (cooling_second > 60)
+              case BUTTON_STATE_STANDBY:
+                // STANDBY에서 짧은 클릭 -> 타이머 시작/정지
+                if (!Button_State.is_start_to_cooling)
                 {
-                  cooling_second = 60;
+                  HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
+                  Button_State.is_Start_Timer = !Button_State.is_Start_Timer;
+
+                  if (Button_State.is_Start_Timer)
+                  {
+                    osTimerStart(MainTimerHandle, 500);
+                    Button_State.minute_count = Button_State.Timer_Value;
+                    Button_State.second_count = 0;
+                  }
+                  else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
+                  {
+                    Button_State.is_start_to_cooling = true;
+                    int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
+                    if (cooling_second > 60)
+                      cooling_second = 60;
+                    Button_State.cooling_second = cooling_second;
+                  }
+                  else
+                  {
+                    osTimerStop(MainTimerHandle);
+                    HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+                  }
                 }
-                Button_State.cooling_second = cooling_second;
-              }
-              else if (!Button_State.is_Start_Timer && !Button_State.is_start_to_cooling)
-              {
-                osTimerStop(MainTimerHandle);
-                HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+                break;
+
+              case BUTTON_STATE_TIMER_SET:
+                // TIMER_SET에서 짧은 클릭 -> 타이머 값 증가
+                Button_State.Timer_Value += 2;
+                if (Button_State.Timer_Value > 10)
+                  Button_State.Timer_Value = 2;
+                Button_State.Timer_Set_Start_Time = current_time;
+                break;
+
+              default:
+                break;
               }
             }
-            break;
-
-          case BUTTON_STATE_TIMER_SET:
-            // TIMER_SET에서 1초 이하 클릭 -> 타이머 값 증가
-            if (Button_State.single_click_duration < (1000 / portTICK_PERIOD_MS))
-            {
-              Button_State.Timer_Value += 2;
-              if (Button_State.Timer_Value > 10)
-              {
-                Button_State.Timer_Value = 2; // 10을 넘으면 1부터 다시 시작
-              }
-
-              // 타이머 값이 변경되었으므로 플래시에 저장
-              // Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
-
-              // TIMER_SET에서 활동이 있었으므로 비활성화 타이머 리셋
-              Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
-            }
-            break;
-
-          default:
-            break;
           }
         }
       }
 
-      // 버튼이 계속 눌려있는 상태에서 1.5초 이상 지나면 처리
+      // 긴 클릭 처리 - 버튼이 계속 눌려있는 상태에서 1.5초 이상
       if (!Button_State.is_pushed_changed && is_Button_Pressed &&
           (Button_State.Button_Current_Time - Button_State.Button_Press_Start_Time) >= (1500 / portTICK_PERIOD_MS))
       {
+        Button_State.is_pushed_changed = true;
+
         if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY && !Button_State.is_Start_Timer)
         {
-          Button_State.is_pushed_changed = true;
+          // STANDBY에서 긴 클릭 -> TIMER_SET 모드로 전환
           Button_State.Current_Button_State = BUTTON_STATE_TIMER_SET;
-          Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time; // TIMER_SET 진입시 비활성화 타이머 시작
+          Button_State.Timer_Set_Start_Time = Button_State.Button_Current_Time;
         }
         else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
         {
-          // TIMER_SET에서 1.5초 이상 누르면 STANDBY로 복귀
-          Button_State.is_pushed_changed = true;
+          // TIMER_SET에서 긴 클릭 -> STANDBY로 복귀
           Button_State.Current_Button_State = BUTTON_STATE_STANDBY;
-
-          // TIMER_SET 모드를 나갈 때 현재 타이머 값을 플래시에 저장
-          // Timer_SaveToFlash((uint32_t)Button_State.Timer_Value);
         }
       }
 
