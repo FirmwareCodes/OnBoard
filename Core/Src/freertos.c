@@ -31,7 +31,7 @@
 #include "../../App/Common/Inc/OLED/UI_Layout.h"
 #include "../../App/Common/Inc/OLED/DEV_Config.h"
 #include "../../App/Common/Inc/OLED/OLED_1in3_c.h"
-#include "flash_storage.h"
+// #include "flash_storage.h"
 #include "uart_protocol.h"
 #include "battery_monitor.h"
 
@@ -202,50 +202,6 @@ void Callback01(void *argument);
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
-/**
- * @brief  플래시에서 타이머 값을 불러와 Button_State에 설정합니다
- * @retval None
- */
-void Timer_LoadFromFlash(void)
-{
-  uint32_t timer_value = 0;
-  HAL_StatusTypeDef status = Flash_ReadTimerValue(&timer_value);
-
-  if (status == HAL_OK)
-  {
-    // 유효한 범위 확인 (1초 ~ 255초)
-    if (timer_value >= 1 && timer_value <= 255)
-    {
-      Button_State.Timer_Value = (uint8_t)timer_value;
-    }
-    else
-    {
-      // 범위를 벗어나는 경우 기본값 설정
-      Button_State.Timer_Value = 10;
-    }
-  }
-  else
-  {
-    // 플래시에서 읽기 실패 시 기본값 설정
-    Button_State.Timer_Value = 10;
-  }
-}
-
-/**
- * @brief  타이머 값을 플래시에 저장합니다
- * @param  timer_value: 저장할 타이머 값 (초 단위)
- * @retval None
- */
-void Timer_SaveToFlash(uint32_t timer_value)
-{
-  UNUSED(timer_value);
-  // HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
-
-  // if (status != HAL_OK)
-  // {
-  // }
-}
-
 /* USER CODE END Application */
 
 void RTOS_Start(void)
@@ -274,7 +230,7 @@ void RTOS_Start(void)
   /* start timers, add new ones, ... */
 
   // 플래시에서 타이머 값 로드
-  Timer_LoadFromFlash();
+  // Timer_LoadFromFlash();
 
   // 배터리 모니터링 시스템 초기화
   Battery_Monitor_Init(&Battery_Monitor);
@@ -983,10 +939,10 @@ void StartUartTask(void *argument)
   UART_State.command_ready = 0;
   UART_State.monitoring_enabled = 0;
 
-  // 초기 안정화 대기 (다른 태스크들이 완전히 초기화될 때까지)
+  // 초기 안정화 대기
   osDelay(500);
 
-  // UART 인터럽트 수신 시작 (안전한 방식으로)
+  // UART 인터럽트 수신 시작
   if (HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1) != HAL_OK)
   {
     // UART 인터럽트 시작 실패시 재시도
@@ -997,7 +953,7 @@ void StartUartTask(void *argument)
   /* Infinite loop */
   for (;;)
   {
-    // 1. 수신된 명령어 처리 (안전한 방식으로)
+    // 1. 수신된 명령어 처리
     if (UART_State.command_ready && is_can_use_vbat == true)
     {
       UART_ProcessCommand();
@@ -1080,7 +1036,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   {
     uint8_t received_char = UART_State.rx_buffer[UART_State.rx_index];
 
-    // 명령어 버퍼에 문자 저장 (인터럽트에서는 최소한의 처리만)
+    // 명령어 버퍼에 문자 저장
     if (received_char == '\n' || received_char == '\r')
     {
       // 명령어 완료 - 빈 명령어 체크
@@ -1109,14 +1065,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
       // 제어 문자나 유효하지 않은 문자는 무시
     }
 
-    // 다음 문자 수신 준비 (안전한 인덱스 관리)
+    // 다음 문자 수신 준비
     UART_State.rx_index = (UART_State.rx_index + 1) % sizeof(UART_State.rx_buffer);
 
-    // 인터럽트 재시작 (안전 체크 추가)
-    if (huart->RxState == HAL_UART_STATE_READY)
-    {
-      HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1);
-    }
+    HAL_UART_Receive_IT(&huart1, &UART_State.rx_buffer[UART_State.rx_index], 1);
   }
 }
 

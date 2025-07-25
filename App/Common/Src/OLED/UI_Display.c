@@ -1,6 +1,6 @@
 /*****************************************************************************
  * | File      	:   UI_Display.c
- * | Author      :   OnBoard LED Light Timer
+ * | Author      :   Choi GeonHyeong
  * | Function    :   UI Display functions for 1.3inch OLED
  * | Info        :   New Layout: Left 96x64 Battery Area + Right 32x64 Info Area
  *----------------
@@ -31,13 +31,13 @@ extern const unsigned char colon_3x7[7];
 
 extern bool is_half_second_tick;
 
-// 최적화를 위한 전역 변수 (삼각함수 룩업 테이블)
+// 최적화를 위한 전역 변수
 static float sin_table[720] = {0}; // 0.5도 간격으로 360도 * 2
 static float cos_table[720] = {0};
 static uint8_t lookup_table_initialized = 0;
 
 /**
- * @brief 삼각함수 룩업 테이블 초기화 (최초 1회만 실행)
+ * @brief 삼각함수 룩업 테이블 초기화
  */
 static void init_trig_lookup_table(void)
 {
@@ -54,7 +54,7 @@ static void init_trig_lookup_table(void)
 }
 
 /**
- * @brief UI 초기화 (메인에서 이미 초기화 완료된 상태에서 호출)
+ * @brief UI 초기화
  */
 void UI_Init(void)
 {
@@ -139,7 +139,7 @@ void UI_DrawDigitLarge(uint16_t x, uint16_t y, uint8_t digit, uint16_t color, fl
 }
 
 /**
- * @brief 큰 숫자 2자리 그리기 (이전 방식으로 되돌림)
+ * @brief 큰 숫자 2자리 그리기
  */
 void UI_DrawTwoDigitsLarge(uint16_t x, uint16_t y, uint8_t value)
 {
@@ -262,40 +262,6 @@ void UI_DrawCircle(uint16_t x, uint16_t y, uint16_t radius, uint16_t color, uint
     }
 }
 
-// /**
-//  * @brief 부드러운 원형 그리기 (브레젠햄 알고리즘 기반)
-//  */
-// static void draw_smooth_circle_outline(uint16_t center_x, uint16_t center_y, uint16_t radius, uint16_t color)
-// {
-//     int x = radius;
-//     int y = 0;
-//     int decision = 1 - radius;
-
-//     while (x >= y)
-//     {
-//         // 8방향 대칭으로 픽셀 그리기
-//         Paint_SetPixel(center_x + x, center_y + y, color);
-//         Paint_SetPixel(center_x - x, center_y + y, color);
-//         Paint_SetPixel(center_x + x, center_y - y, color);
-//         Paint_SetPixel(center_x - x, center_y - y, color);
-//         Paint_SetPixel(center_x + y, center_y + x, color);
-//         Paint_SetPixel(center_x - y, center_y + x, color);
-//         Paint_SetPixel(center_x + y, center_y - x, color);
-//         Paint_SetPixel(center_x - y, center_y - x, color);
-
-//         y++;
-//         if (decision <= 0)
-//         {
-//             decision += 2 * y + 1;
-//         }
-//         else
-//         {
-//             x--;
-//             decision += 2 * (y - x) + 1;
-//         }
-//     }
-// }
-
 /**
  * @brief 최적화된 원형 호 그리기 (룩업 테이블 기반)
  * @param center_x: 중심 X 좌표
@@ -342,12 +308,10 @@ static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t ra
                 // 간격이 클 때만 중간 픽셀 채우기
                 if (abs(dx) > 1 || abs(dy) > 1)
                 {
-                    // 간단한 중점 보간 (브레젠햄보다 빠름)
                     int mid_x = prev_x + dx / 2;
                     int mid_y = prev_y + dy / 2;
                     Paint_SetPixel(mid_x, mid_y, color);
 
-                    // 필요시 추가 중점
                     if (abs(dx) > 2 || abs(dy) > 2)
                     {
                         Paint_SetPixel(prev_x + dx / 3, prev_y + dy / 3, color);
@@ -363,13 +327,13 @@ static void draw_optimized_arc(uint16_t center_x, uint16_t center_y, uint16_t ra
 }
 
 /**
- * @brief 원형 프로그래스바 그리기 (최적화된 버전 - 부드러운 원형)
+ * @brief 원형 프로그래스바 그리기 
  * @param center_x: 중심 X 좌표
  * @param center_y: 중심 Y 좌표
  * @param radius: 반지름
  * @param progress: 진행률 (0-100)
  * @param color: 색상
- * @param should_update: 업데이트 여부 (성능 최적화)
+ * @param should_update: 업데이트 여부
  */
 void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t progress, uint16_t color, uint8_t should_update)
 {
@@ -384,17 +348,8 @@ void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint
     // 기존 프로그래스바 영역 클리어
     Paint_DrawCircle(center_x, center_y, radius, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
 
-    // 미리 계산된 값들
-    // const int outer_radius = radius - 1;
     const int inner_radius = radius - 10;
     const int progress_start_radius = radius - 1;
-    // const int progress_end_radius = radius - 4;
-
-    // 브레젠햄 알고리즘으로 완벽한 원형 테두리 그리기
-    // draw_smooth_circle_outline(center_x, center_y, outer_radius, color);
-    // draw_smooth_circle_outline(center_x, center_y, inner_radius, color);
-
-    // draw_smooth_circle_outline(center_x, center_y, outer_radius + 1, COLOR_BLACK);
 
     // 진행률이 0이면 테두리만 그리고 종료
     if (progress == 0)
@@ -410,7 +365,7 @@ void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint
 
     draw_optimized_arc(center_x, center_y, progress_start_radius, 0, progress_angle, color, progress_thickness);
 
-    // 시작점과 끝점에 둥근 캡 추가 (간소화된 버전)
+    // 시작점과 끝점에 둥근 캡 추가
     if (progress > 3) // 최소 진행률이 있을 때만
     {
         // 시작점 캡 (12시 방향) - 3x3에서 2x2로 축소
@@ -422,7 +377,7 @@ void UI_DrawCircularProgressOptimized(uint16_t center_x, uint16_t center_y, uint
         Paint_SetPixel(start_x, start_y + 1, color);
         Paint_SetPixel(start_x + 1, start_y + 1, color);
 
-        // 끝점 캡 (진행률이 충분할 때만) - 3x3에서 2x2로 축소
+        // 끝점 캡 - 3x3에서 2x2로 축소
         if (progress > 8)
         {
             float end_angle_rad = (progress_angle - 90) * M_PI / 180.0f;
@@ -482,13 +437,10 @@ void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
         return; // LOW BAT 상태에서는 다른 요소들 그리지 않음
     }
 
-    // 영역 경계선 그리기 (현재 사용안함-검정)
-    // Paint_DrawLine(LEFT_AREA_WIDTH, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-
-    // 전압 기반 프로그래스바 그리기 (애니메이션 지원)
+    // 전압 기반 프로그래스바 그리기
     if ((uint16_t)(current_voltage * 10) != (uint16_t)(status->last_battery_voltage * 10))
     {
-        // 정상 상태로 복귀 시 배터리 영역 완전 클리어 (잔상 제거)
+        // 정상 상태로 복귀 시 배터리 영역 완전 클리어
         if (current_voltage > CRITICAL_BATTERY_VOLTAGE)
         {
             Paint_DrawRectangle(0, 0, LEFT_AREA_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
@@ -513,7 +465,7 @@ void UI_DrawBatteryArea(float voltage, UI_Status_t *status)
  * @brief LOW BAT 알람 표시 - 네모 배터리 형태
  * @param center_x: 중심 X 좌표
  * @param center_y: 중심 Y 좌표
- * @param radius: 반지름 (사용하지 않음, 호환성을 위해 유지)
+ * @param radius: 반지름
  * @param blink_state: 깜빡임 상태 (0: 꺼짐, 1: 켜짐)
  */
 void draw_low_battery_alarm(uint16_t center_x, uint16_t center_y, uint16_t radius, uint8_t blink_state)
@@ -637,9 +589,6 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
     Paint_DrawLine(54, 19, 64, 9, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     Paint_DrawLine(54, 20, 64, 10, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-    // 배터리 영역 전체 클리어
-    // Paint_DrawRectangle(69, 2, 76, 10, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-
     // 배터리 경고 표시
     if (current_voltage <= (WARNING_BATTERY_VOLTAGE + 0.4f))
     {
@@ -671,8 +620,6 @@ void UI_DrawVoltageProgress(float voltage, UI_Status_t *status)
             Paint_DrawRectangle(battery_x + 2, battery_y + battery_height - 3,
                                 battery_x + battery_width - 2, battery_y + battery_height - 1, COLOR_WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
         }
-        // Paint_DrawLine(59, 22, 70, 11, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        // Paint_DrawLine(59, 23, 70, 12, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     }
 }
 
@@ -847,28 +794,13 @@ void UI_DrawLEDStatus(Timer_Status_t status, LED_Connection_t l1_status, LED_Con
                 Paint_DrawLine(INFO_L2_X + 2, INFO_L2_Y + 2, INFO_L2_X + 2, INFO_L2_Y + 2, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
             }
         }
-        // Paint_DrawLine(INFO_L2_X, INFO_L2_Y - 10, INFO_L2_X, INFO_L2_Y - 7, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        // Paint_DrawLine(INFO_L2_X - 7, INFO_L2_Y - 8, INFO_L2_X - 6, INFO_L2_Y - 5, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        // Paint_DrawLine(INFO_L2_X + 7, INFO_L2_Y - 8, INFO_L2_X + 6, INFO_L2_Y - 5, COLOR_WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     }
     else
     {
         // 연결 안됨: 빈 원형
         UI_DrawCircle(INFO_L2_X, INFO_L2_Y, INFO_L2_RADIUS, COLOR_WHITE, 0);
 
-        // Paint_DrawLine(INFO_L2_X, INFO_L2_Y - 10, INFO_L2_X, INFO_L2_Y - 7, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        // Paint_DrawLine(INFO_L2_X - 7, INFO_L2_Y - 8, INFO_L2_X - 6, INFO_L2_Y - 5, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-        // Paint_DrawLine(INFO_L2_X + 7, INFO_L2_Y - 8, INFO_L2_X + 6, INFO_L2_Y - 5, COLOR_BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
     }
-}
-
-/**
- * @brief 쿨링 시간 표시 (사용 안함 - 상태 아이콘으로 대체)
- */
-void UI_DrawCoolingTime(uint8_t seconds)
-{
-    // 쿨링 시간은 상태 아이콘으로 표시하므로 별도 표시 안함
-    UNUSED(seconds);
 }
 
 /**
@@ -923,7 +855,7 @@ void UI_StartInitAnimation(UI_Status_t *status, float target_voltage)
 }
 
 /**
- * @brief 전체 화면 그리기 (새로운 레이아웃)
+ * @brief 전체 화면 그리기
  * @param status: UI 상태 구조체
  */
 void UI_DrawFullScreen(UI_Status_t *status)
@@ -948,7 +880,7 @@ void UI_DrawFullScreen(UI_Status_t *status)
 }
 
 /**
- * @brief 최적화된 전체 화면 그리기 (성능 향상)
+ * @brief 최적화된 전체 화면 그리기
  * @param status: UI 상태 구조체
  */
 void UI_DrawFullScreenOptimized(UI_Status_t *status)

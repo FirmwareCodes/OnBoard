@@ -34,7 +34,7 @@ extern "C"
 /* USER CODE BEGIN Includes */
 #include "def.h"
 #include "cmsis_os.h"
-#include "flash_storage.h"
+// #include "flash_storage.h"
 
 /* USER CODE END Includes */
 
@@ -181,9 +181,6 @@ typedef struct
   void StartButtonTask(void *argument);
   void Callback01(void *argument);
 
-  // 플래시 저장 관련 함수 선언
-  void Timer_LoadFromFlash(void);
-  void Timer_SaveToFlash(uint32_t timer_value);
 
 /* USER CODE END EFP */
 

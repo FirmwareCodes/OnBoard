@@ -11,14 +11,14 @@ extern UART_HandleTypeDef huart1;
 extern osMutexId_t UartMutexHandle;
 
 /**
- * @brief UART 명령어 처리 함수 (최적화 버전)
+ * @brief UART 명령어 처리 함수
  */
 void UART_ProcessCommand(void)
 {
-  // 명령어 문자열 최적화 (직접 참조로 성능 향상)
+  // 명령어 문자열 최적화 
   char *cmd_str = (char *)UART_State.cmd_buffer;
 
-  // 빠른 길이 체크 (빈 명령어 즉시 거부)
+  // 빠른 길이 체크 
   if (UART_State.cmd_index == 0)
   {
     UART_State.command_ready = 0;
@@ -28,7 +28,7 @@ void UART_ProcessCommand(void)
   // NULL 종료 보장
   UART_State.cmd_buffer[UART_State.cmd_index] = '\0';
 
-  // 개행 문자 제거 (최적화된 방식)
+  // 개행 문자 제거
   for (int i = UART_State.cmd_index - 1; i >= 0; i--)
   {
     if (cmd_str[i] == '\n' || cmd_str[i] == '\r' || cmd_str[i] == ' ')
@@ -49,7 +49,7 @@ void UART_ProcessCommand(void)
     return;
   }
 
-  // 명령어 처리 (빈도 높은 명령어 우선 처리)
+  // 명령어 처리
   if (memcmp(cmd_str, "GET_SCREEN", 10) == 0 && UART_State.cmd_index == 10)
   {
     UART_SendScreenData();
@@ -104,13 +104,13 @@ void UART_ProcessCommand(void)
   {
   }
 
-  // 명령어 버퍼 즉시 초기화 (성능 최적화)
+  // 명령어 버퍼 즉시 초기화
   UART_State.cmd_index = 0;
   UART_State.command_ready = 0;
 }
 
 /**
- * @brief 화면 데이터 전송 (안정성 강화 버전)
+ * @brief 화면 데이터 전송
  */
 void UART_SendScreenData(void)
 {
@@ -124,10 +124,10 @@ void UART_SendScreenData(void)
     return;
   }
 
-  // UART 플러시 (이전 데이터 완전 제거)
+  // UART 플러시
   __HAL_UART_FLUSH_DRREGISTER(&huart1);
 
-  // 화면 데이터 시작 헤더 전송 (개행 문자 추가하여 명확히 구분)
+  // 화면 데이터 시작 헤더 전송
   const char *header = "\n<<SCREEN_START>>\nSIZE:128x64\nFORMAT:PAINT_IMAGE\n";
   HAL_StatusTypeDef status = HAL_UART_Transmit(&huart1, (uint8_t *)header, strlen(header), 1000);
 
@@ -138,14 +138,14 @@ void UART_SendScreenData(void)
     return;
   }
 
-  // 전송 전 잠시 대기 (헤더 완전 전송 보장)
+  // 전송 전 잠시 대기
   osDelay(3);
 
-  // Paint.Image 데이터를 한번에 전송 (안정성 강화)
+  // Paint.Image 데이터를 한번에 전송
   // OLED 화면 데이터: 128x64 = 8192 pixels = 1024 bytes (8 pixels per byte)
   uint16_t image_size = (OLED_1in3_C_WIDTH * OLED_1in3_C_HEIGHT) / 8; // 1024 bytes
 
-  // 체크섬 계산 (데이터 무결성 검증용)
+  // 체크섬 계산
   uint32_t checksum = 0;
   for (uint16_t i = 0; i < image_size; i++)
   {
@@ -160,7 +160,7 @@ void UART_SendScreenData(void)
   // 데이터 시작 마커
   const char *data_marker = "<<DATA_START>>\n";
   HAL_UART_Transmit(&huart1, (uint8_t *)data_marker, strlen(data_marker), 1000);
-  // 전체 이미지를 한번에 전송 (최대 안정성)
+  // 전체 이미지를 한번에 전송 
   status = HAL_UART_Transmit(&huart1, Paint.Image, image_size, 3000); // 3초 타임아웃
   if (status != HAL_OK)
   {
@@ -178,7 +178,7 @@ void UART_SendScreenData(void)
   const char *data_end_marker = "\n<<DATA_END>>\n";
   HAL_UART_Transmit(&huart1, (uint8_t *)data_end_marker, strlen(data_end_marker), 1000);
 
-  // 화면 데이터 종료 헤더 전송 (개행 문자 추가)
+  // 화면 데이터 종료 헤더 전송 
   const char *footer = "<<SCREEN_END>>\n\n";
   HAL_UART_Transmit(&huart1, (uint8_t *)footer, strlen(footer), 1000);
 
@@ -263,12 +263,10 @@ void UART_SendStatusData(void)
 }
 
 /**
- * @brief 응답 메시지 전송 (최적화된 버전)
+ * @brief 응답 메시지 전송 
  */
 void UART_SendResponse(const char *response)
 {
-  // 뮤텍스 없이 직접 전송으로 응답성 최대화
-  // 짧은 응답 메시지는 충돌 위험이 낮음
   HAL_UART_Transmit(&huart1, (uint8_t *)response, strlen(response), 500); // 타임아웃 단축
 }
 
@@ -282,7 +280,7 @@ void UART_ProcessTimerSet(const char *time_str)
   {
     if (minutes >= 0 && minutes <= 99 && seconds >= 0 && seconds <= 59)
     {
-      // 실제 타이머 값 설정 (초 단위로 변환)
+      // 실제 타이머 값 설정
       Button_State.Timer_Value = minutes; // 분 단위로 저장
       UART_SendResponse("OK:Timer set\n");
     }

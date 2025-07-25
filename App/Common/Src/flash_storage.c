@@ -308,3 +308,47 @@ HAL_StatusTypeDef Flash_ReadBatteryData(uint8_t *percentage, uint8_t *status, ui
     
     return HAL_OK;
 } 
+
+// /**
+//  * @brief  플래시에서 타이머 값을 불러와 Button_State에 설정합니다
+//  * @retval None
+//  */
+// void Timer_LoadFromFlash(void)
+// {
+//   uint32_t timer_value = 0;
+//   HAL_StatusTypeDef status = Flash_ReadTimerValue(&timer_value);
+
+//   if (status == HAL_OK)
+//   {
+//     // 유효한 범위 확인 (1초 ~ 255초)
+//     if (timer_value >= 1 && timer_value <= 255)
+//     {
+//       Button_State.Timer_Value = (uint8_t)timer_value;
+//     }
+//     else
+//     {
+//       // 범위를 벗어나는 경우 기본값 설정
+//       Button_State.Timer_Value = 10;
+//     }
+//   }
+//   else
+//   {
+//     // 플래시에서 읽기 실패 시 기본값 설정
+//     Button_State.Timer_Value = 10;
+//   }
+// }
+
+// /**
+//  * @brief  타이머 값을 플래시에 저장합니다
+//  * @param  timer_value: 저장할 타이머 값 (초 단위)
+//  * @retval None
+//  */
+// void Timer_SaveToFlash(uint32_t timer_value)
+// {
+//   UNUSED(timer_value);
+//   // HAL_StatusTypeDef status = Flash_WriteTimerValue(timer_value);
+
+//   // if (status != HAL_OK)
+//   // {
+//   // }
+// }

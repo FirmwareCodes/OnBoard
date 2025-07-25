@@ -61,29 +61,9 @@ extern "C"
 
   } sFONT;
 
-  // GB2312
-  typedef struct // 中文字模数据结构
-  {
-    unsigned char index[2];                                  // 中文内码索引
-    const char matrix[MAX_HEIGHT_FONT * MAX_WIDTH_FONT / 8]; // 点阵字模数据
-  } CH_CN;
-
-  typedef struct
-  {
-    const CH_CN *table;
-    uint16_t size;
-    uint16_t ASCII_Width;
-    uint16_t Width;
-    uint16_t Height;
-
-  } cFONT;
-
   extern sFONT Font8;
   extern sFONT Font12;
   extern sFONT Font24;
-
-  // extern cFONT Font12CN;
-  // extern cFONT Font24CN;
 
 
 #ifdef __cplusplus

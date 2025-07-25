@@ -14,3 +14,4 @@
 *.html
 Python\OLED_Monitor\Core\venv\*
 /Doc/UI_화면설계/*
+/Doc/*.pptx

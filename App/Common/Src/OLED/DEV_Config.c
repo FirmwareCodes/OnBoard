@@ -53,52 +53,8 @@ note:
 uint8_t SPI4W_Write_Byte(uint8_t value)
 {
 	return HAL_SPI_Transmit(&hspi1, &value, 1, 10);
-	// #if 0
-	//     HAL_SPI_Transmit(&hspi1, &value, 1, 500);
-	// #elif 0
-	//     char i;
-	//     for(i = 0; i < 8; i++) {
-	//         SPI_SCK_0;
-	//         if(value & 0X80)
-	//             SPI_MOSI_1;
-	//         else
-	//             SPI_MOSI_0;
-	//         Driver_Delay_us(10);
-	//         SPI_SCK_1;
-	//         Driver_Delay_us(10);
-	//         value = (value << 1);
-	//     }
-	// #else
-	//     __HAL_SPI_ENABLE(&hspi5);
-	//     SPI5->CR2 |= (1) << 12;
-	//
-	//     while((SPI5->SR & (1 << 1)) == 0)
-	//         ;
-	//
-	//     *((__IO uint8_t *)(&SPI5->DR)) = value;
-	//
-	//     while(SPI5->SR & (1 << 7)) ; //Wait for not busy
-	//
-	//     while((SPI5->SR & (1 << 0)) == 0) ; // Wait for the receiving area to be empty
-	//
-	//     return *((__IO uint8_t *)(&SPI5->DR));
-	// #endif
+	
 }
-
-// void I2C_Write_Byte(uint8_t value, uint8_t Cmd)
-//{
-//     int Err;
-//     uint8_t W_Buf[2] ;
-//     W_Buf[0] = Cmd;
-//     W_Buf[1] = value;
-//     if(HAL_I2C_Master_Transmit(&hi2c1, (0X3C << 1) | 0X00, W_Buf, 2, 0x10) != HAL_OK) {
-//         Err++;
-//         if(Err == 1000) {
-//             printf("send error\r\n");
-//             return ;
-//         }
-//     }
-// }
 
 /********************************************************************************
 function:	Delay function

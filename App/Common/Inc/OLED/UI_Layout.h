@@ -219,7 +219,6 @@ void UI_DrawInfoArea(UI_Status_t *status);
 void UI_DrawTimerTime(uint8_t minutes, uint8_t seconds, uint8_t should_blink, uint32_t blink_counter);
 void UI_DrawTimerStatus(Timer_Status_t status);
 void UI_DrawLEDStatus(Timer_Status_t status, LED_Connection_t l1_status, LED_Connection_t l2_status);
-void UI_DrawCoolingTime(uint8_t seconds);
 
 // 보조 UI 함수 선언
 void UI_DrawIcon19x19(uint16_t x, uint16_t y, const unsigned char *icon_data, uint16_t color);
