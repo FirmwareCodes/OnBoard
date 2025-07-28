@@ -46,44 +46,40 @@ extern "C"
 #define BATTERY_SAMPLE_BUFFER_SIZE 8
 #define BATTERY_MIN_VOLTAGE_BUFFER_SIZE 8
 
-// 배터리 전압 보정값 (부하 시 전압 강하)
-#define BATTERY_LOAD_VOLTAGE_DROP_ADC 90  // 약 0.8V 강하 (ADC 값)
-#define BATTERY_RECOVERY_TIME_MS 5000    // 회복 시간
+  // 배터리 상태 열거형
+  typedef enum
+  {
+    BATTERY_STATUS_NORMAL = 0,
+    BATTERY_STATUS_LOW,
+    BATTERY_STATUS_CRITICAL
+  } Battery_Status_t;
 
-// 배터리 상태 열거형
-typedef enum
-{
-  BATTERY_STATUS_NORMAL = 0,
-  BATTERY_STATUS_LOW,
-  BATTERY_STATUS_CRITICAL
-} Battery_Status_t;
+  // 배터리 측정 및 보정 구조체
+  typedef struct
+  {
+    uint16_t raw_adc_samples[BATTERY_SAMPLE_BUFFER_SIZE];          // 최근 8개 ADC 샘플
+    uint16_t min_voltage_samples[BATTERY_MIN_VOLTAGE_BUFFER_SIZE]; // 최저 전압 8개 샘플
+    uint8_t sample_index;                                          // 현재 샘플 인덱스
+    uint8_t min_voltage_index;                                     // 최저 전압 샘플 인덱스
+    uint8_t sample_buffer_full;                                    // 샘플 버퍼 가득참 여부
+    uint8_t min_voltage_buffer_full;                               // 최저 전압 버퍼 가득함 여부
 
-// 배터리 측정 및 보정 구조체
-typedef struct
-{
-  uint16_t raw_adc_samples[BATTERY_SAMPLE_BUFFER_SIZE];     // 최근 8개 ADC 샘플
-  uint16_t min_voltage_samples[BATTERY_MIN_VOLTAGE_BUFFER_SIZE]; // 최저 전압 8개 샘플
-  uint8_t sample_index;                                     // 현재 샘플 인덱스
-  uint8_t min_voltage_index;                               // 최저 전압 샘플 인덱스
-  uint8_t sample_buffer_full;                              // 샘플 버퍼 가득참 여부
-  uint8_t min_voltage_buffer_full;                         // 최저 전압 버퍼 가득함 여부
-  
-  uint16_t filtered_voltage;                               // 일정 횟수 측정값을 평균 필터링된 전압 (ADC)
-  uint16_t compensated_voltage;                            // 부하 보정된 전압 (ADC)
-  uint16_t display_voltage;                                // 표시용 실측 전압 (ADC, 보정 적용 안함)
-  float battery_percentage;                                // 배터리 잔량 퍼센트 (소수점 2자리)
-  float last_saved_percentage;                             // 마지막 저장된 퍼센트 (소수점 2자리)
-  Battery_Status_t status;                                 // 배터리 상태
-  
-  uint32_t last_load_state_change_time;                    // 마지막 부하 상태 변경 시간
-  bool is_under_load;                                      // 현재 부하 상태
-  bool voltage_recovery_in_progress;                       // 전압 회복 진행 중
-  bool is_power_on_sequence;                               // 전원 켜짐 시퀀스 중
-  
-  uint32_t last_update_time;                              // 마지막 업데이트 시간
-  uint32_t last_flash_save_time;                          // 마지막 플래시 저장 시간
-  uint32_t power_on_time;                                 // 전원 켜진 시간
-} Battery_Monitor_t;
+    uint16_t filtered_voltage;    // 일정 횟수 측정값을 평균 필터링된 전압 (ADC)
+    uint16_t compensated_voltage; // 부하 보정된 전압 (ADC)
+    uint16_t display_voltage;     // 표시용 실측 전압 (ADC, 보정 적용 안함)
+    float battery_percentage;     // 배터리 잔량 퍼센트 (소수점 2자리)
+    float last_saved_percentage;  // 마지막 저장된 퍼센트 (소수점 2자리)
+    Battery_Status_t status;      // 배터리 상태
+
+    uint32_t last_load_state_change_time; // 마지막 부하 상태 변경 시간
+    bool is_under_load;                   // 현재 부하 상태
+    bool voltage_recovery_in_progress;    // 전압 회복 진행 중
+    bool is_power_on_sequence;            // 전원 켜짐 시퀀스 중
+
+    uint32_t last_update_time;     // 마지막 업데이트 시간
+    uint32_t last_flash_save_time; // 마지막 플래시 저장 시간
+    uint32_t power_on_time;        // 전원 켜진 시간
+  } Battery_Monitor_t;
 
   // LED PWM 제어를 위한 변수들
   typedef enum
@@ -141,19 +137,11 @@ typedef struct
     bool is_pushed_changed;   // 버튼 누름 상태로 인한 변경여부
     bool is_start_to_cooling; // 쿨링 시작 여부
     int8_t cooling_second;    // 쿨링 초 카운트
-    
-    // 더블 클릭 감지를 위한 변수들 (사용안함 - 단일클릭/긴클릭만 사용)
-    uint32_t last_click_time;     // 마지막 클릭 시간 (디바운싱용)
-    // uint8_t click_count;          // 클릭 카운트 (사용안함)
-    // bool double_click_detected;   // 더블 클릭 감지 여부 (사용안함)
-    
-    // 단일클릭 지연 처리를 위한 변수들 (사용안함 - 즉시 처리)
-    // bool pending_single_click;    // 대기 중인 단일클릭 여부 (사용안함)
-    // uint32_t single_click_time;   // 단일클릭 발생 시간 (사용안함)
-    // uint32_t single_click_duration; // 단일클릭 버튼 누름 시간 (사용안함)
-    
+
+    uint32_t last_click_time; // 마지막 클릭 시간
+
     // 배터리 표시 토글
-    bool show_battery_voltage;    // true: 전압 표시, false: 퍼센트 표시
+    bool show_battery_voltage; // true: 전압 표시, false: 퍼센트 표시
   } Button_t;
 
   /* USER CODE END ET */
@@ -180,7 +168,6 @@ typedef struct
   void StartDisplayTask(void *argument);
   void StartButtonTask(void *argument);
   void Callback01(void *argument);
-
 
 /* USER CODE END EFP */
 
@@ -232,12 +219,12 @@ typedef struct
 #define SYSTEM_CUT_OFF_VOLTAGE 2625
 #define SYSTEM_RECOVERY_VOLTAGE 2660
 
-#define BATTERY_MAX 3720 //25.2V
-#define BATTERY_FULL 3640 
-#define BATTERY_MIN 2740 //18.6V
+#define BATTERY_MAX 3720 // 25.2V
+#define BATTERY_FULL 3640
+#define BATTERY_MIN 2740 // 18.6V
 
 #define WARNING_BATTERY_VOLTAGE 19.4f
-#define CRITICAL_BATTERY_VOLTAGE 18.6f  // LOW BAT 알람 표시 임계값
+#define CRITICAL_BATTERY_VOLTAGE 18.6f // LOW BAT 알람 표시 임계값
   /* USER CODE BEGIN Private defines */
 
   /* USER CODE END Private defines */

@@ -139,12 +139,7 @@ Button_t Button_State = {
     .is_start_to_cooling = false,                 // 쿨링 시작 여부
     .cooling_second = 0,                          // 쿨링 초 카운트
     .last_click_time = 0,                         // 마지막 버튼 클릭 시간 (디바운싱용)
-    // .click_count = 0,                             // 더블 클릭 카운트 (사용안함)
-    // .double_click_detected = false,               // 더블 클릭 감지 플래그 (사용안함)
-    .show_battery_voltage = false, // 배터리 표시 토글 플래그
-                                   // .pending_single_click = false,                // 대기 중인 단일클릭 플래그 (사용안함)
-                                   // .single_click_time = 0,                       // 단일클릭 시작 시간 (사용안함)
-                                   // .single_click_duration = 0,                   // 단일클릭 지속 시간 (사용안함)
+    .show_battery_voltage = false,                // 배터리 표시 토글 플래그
 };
 
 UART_State_t UART_State = {
@@ -330,9 +325,12 @@ void StartOneSecondTask(void *argument)
 
     // 타이머 시작 시간
     if (is_can_use_vbat == true)
+    {
       HAL_GPIO_TogglePin(System_LED_GPIO_Port, System_LED_Pin);
+    }
     else if (is_can_use_vbat == false && HAL_GPIO_ReadPin(System_LED_GPIO_Port, System_LED_Pin) == GPIO_PIN_SET)
     {
+      // 배터리 사용불가시 LED OFF
       HAL_GPIO_WritePin(System_LED_GPIO_Port, System_LED_Pin, GPIO_PIN_RESET);
     }
 
@@ -468,6 +466,7 @@ void StartAdcTask(void *argument)
 
     if (Adc_State.VBat_Buffer_Index >= VBAT_FILTER_SIZE - 1)
     {
+      // 배터리의 전압이 CUT_OFF_VOLTAGE 이하일때 화면 끄기
       if (vbat_current < SYSTEM_CUT_OFF_VOLTAGE && is_can_use_vbat == true)
       {
         is_can_use_vbat = false;
@@ -477,6 +476,7 @@ void StartAdcTask(void *argument)
         osDelay(100);
         OLED_1in3_C_LCD_OFF();
       }
+      // 배터리의 전압이 RECOVERY_VOLTAGE 이상일때 리부트하여 화면 켜기
       else if (is_can_use_vbat == false && vbat_current > SYSTEM_RECOVERY_VOLTAGE)
       {
         is_can_use_vbat = true;
@@ -967,15 +967,15 @@ void Callback01(void *argument)
           Button_State.is_Start_Timer = false;
           Button_State.is_start_to_cooling = true;
 
-          // 쿨링 시간을 최소 30초, 최대 60초로 설정
+          // 쿨링 시간을 최소 10초, 최대 30초로 설정
           uint32_t cooling_time = Button_State.Timer_Value * 10;
-          if (cooling_time < 30)
+          if (cooling_time < 10)
           {
             cooling_time = 10;
           }
-          else if (cooling_time > 60)
+          else if (cooling_time > 30)
           {
-            cooling_time = 60;
+            cooling_time = 30;
           }
           Button_State.cooling_second = cooling_time;
         }

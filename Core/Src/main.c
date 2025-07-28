@@ -82,7 +82,7 @@ void Callback01(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-// 모든 UART 통신은 freertos.c의 UartTask에서 처리됩니다
+// 모든 UART 통신은 freertos.c의 UartTask에서 처리
 /* USER CODE END 0 */
 
 /**
