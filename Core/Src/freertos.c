@@ -805,7 +805,8 @@ void StartButtonTask(void *argument)
             Button_State.last_click_time = current_time;
 
             // 짧은 클릭 (1초 미만) 즉시 처리
-            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS) && current_status.timer_status != TIMER_STATUS_LOCKING)
+            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS) &&
+                (current_status.timer_status != TIMER_STATUS_LOCKING || Button_State.is_Start_Timer))
             {
               // 단일클릭 즉시 처리
               switch (Button_State.Current_Button_State)
@@ -825,11 +826,19 @@ void StartButtonTask(void *argument)
                   }
                   else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
                   {
-                    Button_State.is_start_to_cooling = true;
-                    int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
-                    if (cooling_second > 60)
-                      cooling_second = 60;
-                    Button_State.cooling_second = cooling_second;
+                    if (current_status.timer_status != TIMER_STATUS_LOCKING)
+                    {
+                      Button_State.is_start_to_cooling = true;
+                      int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 5;
+                      if (cooling_second > 30)
+                        cooling_second = 30;
+                      Button_State.cooling_second = cooling_second;
+                    }
+                    else
+                    {
+                      osTimerStop(MainTimerHandle);
+                      HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+                    }
                   }
                   else
                   {
