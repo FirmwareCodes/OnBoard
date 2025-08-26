@@ -125,7 +125,8 @@ typedef enum
     TIMER_STATUS_RUNNING = 1, // 실행 중
     TIMER_STATUS_SETTING = 2, // 설정 중
     TIMER_STATUS_COOLING = 3, // 쿨링 중
-    TIMER_STATUS_WARNING = 4  // 경고
+    TIMER_STATUS_LOCKING = 4,
+    TIMER_STATUS_WARNING = 5  // 경고
 } Timer_Status_t;
 
 // LED 연결 상태 열거형
@@ -173,6 +174,7 @@ extern const unsigned char running_icon_19x19[]; // 실행 상태
 extern const unsigned char setting_icon_19x19[]; // 설정 상태
 extern const unsigned char cooling_icon_19x19[]; // 쿨링 상태
 extern const unsigned char warning_icon_19x19[]; // 경고 상태
+extern const unsigned char lock_icon_19x19[];    // 잠금 상태
 
 // 퍼센트 아이콘 비트맵 (12x16)
 extern const unsigned char percent_12x16[];

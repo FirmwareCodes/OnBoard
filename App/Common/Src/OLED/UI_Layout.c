@@ -1210,7 +1210,7 @@ void UI_DrawTimerToggleStatus(Timer_Status_t status, Toggle_Switch_t *toggle, ui
         // 토글 스위치 그리기
         UI_DrawToggleSwitch(toggle);
     }
-    else
+    else 
     {
         // 다른 상태에서는 기존 아이콘 표시
         uint16_t icon_x = (INFO_AREA_X + (INFO_AREA_WIDTH / 2) - (19 / 2)) - 1;
@@ -1235,6 +1235,9 @@ void UI_DrawTimerToggleStatus(Timer_Status_t status, Toggle_Switch_t *toggle, ui
             break;
         case TIMER_STATUS_COOLING:
             UI_DrawIcon19x19(icon_x, icon_y, cooling_icon_19x19, COLOR_WHITE);
+            break;
+        case TIMER_STATUS_LOCKING:
+            UI_DrawIcon19x19(icon_x, icon_y, lock_icon_19x19, COLOR_WHITE);
             break;
         case TIMER_STATUS_WARNING:
             UI_DrawIcon19x19(icon_x, icon_y, warning_icon_19x19, COLOR_WHITE);

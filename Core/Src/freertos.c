@@ -535,10 +535,20 @@ void StartAdcTask(void *argument)
     // 타이머 실행 시 차단 상태에서는 0% 출력, 아니면 현재 PWM 듀티 출력
     uint16_t pwm_duty = Button_State.is_Start_Timer ? (Adc_State.Cut_Off_PWM ? DUTY_0 : Adc_State.Current_PWM_Duty) : DUTY_0;
 
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_duty);
+    // LED_EN : LOW일때 LED/FAN 제어가능 , HIGH일때 제어불가
+    if (HAL_GPIO_ReadPin(LED_EN_GPIO_Port, LED_EN_Pin) == GPIO_PIN_RESET && pwm_duty > 0)
+    {
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_duty);
+      HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
+    }
+    else
+    {
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 0);
+      HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+    }
 
     uint8_t CAM_ONOFF = HAL_GPIO_ReadPin(CAM_ONOFF_GPIO_Port, CAM_ONOFF_Pin);
-    if (Adc_State.Cut_Off_PWM && CAM_ONOFF != GPIO_PIN_RESET)
+    if ((Adc_State.Cut_Off_PWM && CAM_ONOFF != GPIO_PIN_RESET))
     {
       HAL_GPIO_WritePin(CAM_ONOFF_GPIO_Port, CAM_ONOFF_Pin, GPIO_PIN_RESET);
     }
@@ -601,7 +611,11 @@ void StartDisplayTask(void *argument)
       // 타이머 상태 결정
       if (current_status.warning_status == 0)
       {
-        if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
+        if (HAL_GPIO_ReadPin(LED_EN_GPIO_Port, LED_EN_Pin) == GPIO_PIN_SET && Button_State.Current_Button_State != BUTTON_STATE_TIMER_SET)
+        {
+          current_status.timer_status = TIMER_STATUS_LOCKING;
+        }
+        else if (Button_State.Current_Button_State == BUTTON_STATE_TIMER_SET)
         {
           current_status.timer_status = TIMER_STATUS_SETTING;
         }
@@ -737,6 +751,7 @@ void StartButtonTask(void *argument)
     // 사용할수 있는 전압이고 경고 상태가 아니고 초기 애니메이션이 끝났으면
     if (is_can_use_vbat == true && current_status.timer_status != TIMER_STATUS_WARNING && !current_status.init_animation_active)
     {
+
       // Setting_Button 핀 상태 읽기 (PULLUP 설정이므로 평상시 HIGH, 눌리면 LOW)
       GPIO_PinState button_raw_state = HAL_GPIO_ReadPin(Setting_Button_GPIO_Port, Setting_Button_Pin);
       Button_State.Button_Current_Time = xTaskGetTickCount();
@@ -790,7 +805,7 @@ void StartButtonTask(void *argument)
             Button_State.last_click_time = current_time;
 
             // 짧은 클릭 (1초 미만) 즉시 처리
-            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS))
+            if (Button_State.Button_Press_Duration < (1000 / portTICK_PERIOD_MS) && current_status.timer_status != TIMER_STATUS_LOCKING)
             {
               // 단일클릭 즉시 처리
               switch (Button_State.Current_Button_State)
@@ -846,7 +861,7 @@ void StartButtonTask(void *argument)
       {
         Button_State.is_pushed_changed = true;
 
-        if (Button_State.Current_Button_State == BUTTON_STATE_STANDBY && !Button_State.is_Start_Timer)
+        if ((Button_State.Current_Button_State == BUTTON_STATE_STANDBY || current_status.timer_status == TIMER_STATUS_LOCKING) && !Button_State.is_Start_Timer)
         {
           // STANDBY에서 긴 클릭 -> TIMER_SET 모드로 전환
           Button_State.Current_Button_State = BUTTON_STATE_TIMER_SET;

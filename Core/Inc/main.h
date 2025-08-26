@@ -174,6 +174,8 @@ extern "C"
 /* Private defines -----------------------------------------------------------*/
 #define LCD_CLK_Pin GPIO_PIN_1
 #define LCD_CLK_GPIO_Port GPIOA
+#define LED_EN_Pin GPIO_PIN_2
+#define LED_EN_GPIO_Port GPIOA
 #define LED_PWM_Pin GPIO_PIN_3
 #define LED_PWM_GPIO_Port GPIOA
 #define LED1_ADC_Pin GPIO_PIN_5
@@ -205,7 +207,7 @@ extern "C"
 #define CAM_ONOFF_GPIO_Port GPIOA
 
 #define DUTY_100 800
-#define DUTY_50 480
+#define DUTY_50 800
 #define DUTY_5 40
 #define DUTY_0 0
 
