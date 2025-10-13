@@ -206,9 +206,9 @@ extern "C"
 #define CAM_ONOFF_Pin GPIO_PIN_4
 #define CAM_ONOFF_GPIO_Port GPIOA
 
-#define DUTY_100 800
-#define DUTY_50 800
-#define DUTY_5 40
+#define DUTY_100 800 // duty 100%
+#define DUTY_50 480 // duty 60% 
+#define DUTY_5 40  // duty 5%
 #define DUTY_0 0
 
 #define LED_LOW_MAX 2100
