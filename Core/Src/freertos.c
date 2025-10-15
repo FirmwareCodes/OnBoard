@@ -760,10 +760,10 @@ void StartButtonTask(void *argument)
       if (button_raw_state == button_stable_state)
       {
         button_stable_count++;
-        if (button_stable_count >= 3)
+        if (button_stable_count >= 7)
         {
           Button_State.Button_Current_State = button_stable_state;
-          button_stable_count = 3; // 오버플로우 방지
+          button_stable_count = 7; // 오버플로우 방지
         }
       }
       else
@@ -775,7 +775,7 @@ void StartButtonTask(void *argument)
       // 버튼 눌림 감지 (HIGH에서 LOW로 전환) - 안정화된 상태에서만 처리
       if (Button_State.Button_Prev_State == GPIO_PIN_SET &&
           Button_State.Button_Current_State == GPIO_PIN_RESET &&
-          button_stable_count >= 3)
+          button_stable_count >= 7)
       {
         Button_State.Button_Press_Start_Time = Button_State.Button_Current_Time;
         is_Button_Pressed = true;
