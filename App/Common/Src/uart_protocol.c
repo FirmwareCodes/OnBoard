@@ -334,9 +334,10 @@ void UART_ProcessTimerStop(void)
     {
       Button_State.is_start_to_cooling = true;
       int8_t cooling_second = (Button_State.Timer_Value - Button_State.minute_count) * 10;
-      if (cooling_second > 60)
-        cooling_second = 60;
+      if (cooling_second > 90)
+        cooling_second = 90;
       Button_State.cooling_second = cooling_second;
+      HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
       UART_SendResponse("OK:Timer stopped, cooling started\n");
     }
     else

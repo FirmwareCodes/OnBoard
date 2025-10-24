@@ -544,7 +544,6 @@ void StartAdcTask(void *argument)
     else
     {
       __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 0);
-      HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
     }
 
     uint8_t CAM_ONOFF = HAL_GPIO_ReadPin(CAM_ONOFF_GPIO_Port, CAM_ONOFF_Pin);
@@ -829,9 +828,10 @@ void StartButtonTask(void *argument)
                     if (current_status.timer_status != TIMER_STATUS_LOCKING)
                     {
                       Button_State.is_start_to_cooling = true;
-                      int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 5;
-                      if (cooling_second > 30)
-                        cooling_second = 30;
+                      int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
+                      if (cooling_second > 90)
+                        cooling_second = 90;
+                      HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
                       Button_State.cooling_second = cooling_second;
                     }
                     else
@@ -1009,6 +1009,10 @@ void Callback01(void *argument)
     {
       if (Button_State.is_start_to_cooling)
       {
+        if(HAL_GPIO_ReadPin(FAN_ONOFF_GPIO_Port,FAN_ONOFF_Pin) != GPIO_PIN_SET)
+        {
+          HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
+        }
         Button_State.cooling_second--;
         if (Button_State.cooling_second <= 0)
         {
