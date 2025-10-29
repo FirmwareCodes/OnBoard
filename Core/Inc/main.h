@@ -122,6 +122,7 @@ extern "C"
 
     int8_t second_count; // 타이머 초 카운트
     int8_t minute_count; // 타이머 분 카운트
+    uint32_t run_sec_count; // 타이머 실행 초 카운트
 
     Button_State_t Current_Button_State; // 현재 버튼 상태
     bool is_Start_Timer;                 // 타이머 시작 여부

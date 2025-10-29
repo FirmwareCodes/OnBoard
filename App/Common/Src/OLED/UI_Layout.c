@@ -1231,7 +1231,7 @@ void UI_DrawTimerToggleStatus(Timer_Status_t status, Toggle_Switch_t *toggle, ui
         switch (status)
         {
         case TIMER_STATUS_SETTING:
-            UI_DrawIcon19x19(icon_x, icon_y, setting_icon_19x19, COLOR_WHITE);
+            UI_DrawIcon19x19(icon_x, icon_y-1, setting_icon_19x19, COLOR_WHITE);
             break;
         case TIMER_STATUS_COOLING:
             UI_DrawIcon19x19(icon_x, icon_y, cooling_icon_19x19, COLOR_WHITE);

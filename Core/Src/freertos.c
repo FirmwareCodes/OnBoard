@@ -823,25 +823,41 @@ void StartButtonTask(void *argument)
                     Button_State.minute_count = Button_State.Timer_Value;
                     Button_State.second_count = 0;
                   }
-                  else if (Button_State.Timer_Value - (uint8_t)Button_State.minute_count != 0 && Button_State.second_count <= 50)
+                  else if (Button_State.run_sec_count >= 10)
                   {
                     if (current_status.timer_status != TIMER_STATUS_LOCKING)
                     {
                       Button_State.is_start_to_cooling = true;
-                      int8_t cooling_second = (Button_State.Timer_Value - (uint8_t)Button_State.minute_count) * 10;
-                      if (cooling_second > 90)
-                        cooling_second = 90;
+
+                      uint32_t cooling_time = 0;
+                      // 쿨링 시간을 최소 10초, 최대 30초로 설정
+                      if (Button_State.run_sec_count > 10 && Button_State.run_sec_count <= 60)
+                      {
+                        cooling_time = 30;
+                      }
+                      else if (Button_State.run_sec_count > 60 && Button_State.run_sec_count <= 240)
+                      {
+                        cooling_time = 60;
+                      }
+                      else if (Button_State.run_sec_count > 240)
+                      {
+                        cooling_time = 90;
+                      }
                       HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
-                      Button_State.cooling_second = cooling_second;
+
+                      Button_State.cooling_second = cooling_time;
+                      Button_State.run_sec_count = 0;
                     }
                     else
                     {
                       osTimerStop(MainTimerHandle);
                       HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
+                      Button_State.run_sec_count = 0;
                     }
                   }
                   else
                   {
+                    Button_State.run_sec_count = 0;
                     osTimerStop(MainTimerHandle);
                     HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_RESET);
                   }
@@ -971,6 +987,7 @@ void Callback01(void *argument)
   {
     if (Button_State.is_Start_Timer)
     {
+      Button_State.run_sec_count++;
 
       // 초 카운트다운
       if (Button_State.second_count > 0)
@@ -992,16 +1009,22 @@ void Callback01(void *argument)
           Button_State.is_start_to_cooling = true;
 
           // 쿨링 시간을 최소 10초, 최대 30초로 설정
-          uint32_t cooling_time = Button_State.Timer_Value * 10;
-          if (cooling_time < 10)
-          {
-            cooling_time = 10;
-          }
-          else if (cooling_time > 30)
+          uint32_t cooling_time = 0;
+          if (Button_State.run_sec_count > 10 && Button_State.run_sec_count <= 60)
           {
             cooling_time = 30;
           }
+          else if (Button_State.run_sec_count > 60 && Button_State.run_sec_count <= 240)
+          {
+            cooling_time = 60;
+          }
+          else if (Button_State.run_sec_count > 240)
+          {
+            cooling_time = 90;
+          }
+
           Button_State.cooling_second = cooling_time;
+          Button_State.run_sec_count = 0;
         }
       }
     }
@@ -1009,7 +1032,7 @@ void Callback01(void *argument)
     {
       if (Button_State.is_start_to_cooling)
       {
-        if(HAL_GPIO_ReadPin(FAN_ONOFF_GPIO_Port,FAN_ONOFF_Pin) != GPIO_PIN_SET)
+        if (HAL_GPIO_ReadPin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin) != GPIO_PIN_SET)
         {
           HAL_GPIO_WritePin(FAN_ONOFF_GPIO_Port, FAN_ONOFF_Pin, GPIO_PIN_SET);
         }
